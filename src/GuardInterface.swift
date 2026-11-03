@@ -47,6 +47,9 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     private var criticalPanel: NSPanel?
     private var criticalTitle: NSTextField?
     private var criticalBody: NSTextField?
+    private var criticalRisk: NSTextField?
+    private var criticalApprove: NSButton?
+    private var criticalReview: NSButton?
     private var criticalTimer: Timer?
     private var notice = GuardNoticePresentation()
     weak var noticeAnchor: NSStatusBarButton?
@@ -145,11 +148,16 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
             details.isSelectable = true
             let review = NSButton(title: tr("reviewConnection"), target: self, action: #selector(reviewCriticalAlert))
             review.bezelStyle = .rounded
+            let risk = NSTextField(wrappingLabelWithString: "")
+            risk.font = .systemFont(ofSize: 12)
+            let approve = NSButton(title: tr("approveExitAction"), target: self, action: #selector(approveCriticalExit))
+            approve.bezelStyle = .rounded
             let dismiss = NSButton(title: tr("acknowledgeAlert"), target: self, action: #selector(dismissCriticalAlert))
             dismiss.bezelStyle = .rounded
-            let buttons = NSStackView(views: [dismiss, review])
-            buttons.orientation = .horizontal; buttons.alignment = .centerY; buttons.spacing = 12
-            let stack = NSStackView(views: [heading, details, buttons])
+            let buttons = NSStackView(views: [dismiss, review, approve])
+            for button in [dismiss, review, approve] { button.controlSize = .small; button.font = .systemFont(ofSize: 12) }
+            buttons.orientation = .horizontal; buttons.alignment = .centerY; buttons.spacing = 8
+            let stack = NSStackView(views: [heading, details, risk, buttons])
             stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
             stack.translatesAutoresizingMaskIntoConstraints = false
             let view = panel.contentView!
@@ -160,13 +168,16 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
                 stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
                 stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -16),
                 heading.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                details.widthAnchor.constraint(equalTo: stack.widthAnchor)
+                details.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                risk.widthAnchor.constraint(equalTo: stack.widthAnchor)
             ])
             criticalPanel = panel; criticalTitle = heading; criticalBody = details
+            criticalRisk = risk; criticalApprove = approve; criticalReview = review
         }
         criticalTitle?.stringValue = title
         criticalTitle?.textColor = NSColor(calibratedRed: 0.72, green: 0.38, blue: 0.27, alpha: 1)
         criticalBody?.stringValue = body
+        refreshCriticalDetails()
         positionCriticalAlert()
         // A nonactivating menu-bar notice must not steal focus or raise the
         // configuration window while the user is working in another app.
@@ -205,7 +216,34 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     @objc private func dismissCriticalAlert() { criticalPanel?.close() }
     @objc private func reviewCriticalAlert() {
         criticalPanel?.close()
-        onAction?(["action": "settings"])
+        let value = (currentState()["state"] as? [String:Any]) ?? [:]
+        onAction?(["action": value["approvalRequired"] as? Bool == true ? "riskDetails" : "settings"])
+    }
+    @objc private func approveCriticalExit() { onAction?(["action":"approveIP"]) }
+    func refreshCriticalDetails() {
+        guard let panel = criticalPanel else { return }
+        let state = (currentState()["state"] as? [String:Any]) ?? [:]
+        let pending = state["approvalRequired"] as? Bool == true
+        criticalRisk?.isHidden = !pending
+        criticalApprove?.isHidden = !pending
+        criticalApprove?.isEnabled = state["canApproveExit"] as? Bool == true
+        criticalApprove?.title = tr(state["approvalSending"] as? Bool == true ? "confirmingExit" : "approveExitAction")
+        criticalReview?.title = tr(pending ? "riskSources" : "reviewConnection")
+        if pending {
+            let report = state["reputation"] as? [String:Any]
+            let fresh = !GuardReportFreshness.stale(time: report?["checked_at"] as? String ?? "", invalidatedAt: "", maxAge: 3600)
+            if fresh, let score = report?["score"] as? NSNumber, (1...100).contains(score.doubleValue) {
+                let coverage = (report?["scored_sources"] as? NSNumber)?.intValue ?? 0
+                let detail = coverage < 2 ? "riskLimited" : (report?["complete"] as? Bool == true ? "riskReference" : "riskProvisional")
+                criticalRisk?.stringValue = tr("ipRisk") + ": " + score.stringValue + "% · " + tr(detail)
+                criticalRisk?.textColor = NSColor(calibratedHue: CGFloat(100-score.doubleValue)/99/3, saturation: 0.65, brightness: 0.65, alpha: 1)
+            } else {
+                criticalRisk?.stringValue = tr("ipRisk") + ": " + tr("riskUnknown")
+                criticalRisk?.textColor = .secondaryLabelColor
+            }
+        }
+        panel.setContentSize(NSSize(width:360,height:pending ? 310 : 240))
+        positionCriticalAlert()
     }
     func clearCriticalAlert() {
         criticalTimer?.invalidate(); criticalTimer = nil
@@ -222,9 +260,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     }
     func refreshMenu() {
         let value = currentState()
-        let state = value["state"] as? [String: Any] ?? [:]
-        let hasNotice = !(state["connectionReason"] as? String ?? "").isEmpty
-        popover.contentSize = NSSize(width: 350, height: hasNotice ? 540 : 365)
+        popover.contentSize = NSSize(width: 350, height: 540)
         send(value, to: menuWeb)
         if settingsReady { send(value, to: settingsWeb) }
     }

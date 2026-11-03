@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import queue
 import re
 import secrets
 import selectors
@@ -36,6 +37,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import system_filter
 import environment_checks
+import ip_reputation
 RUNTIME = ROOT / "runtime"
 
 
@@ -348,6 +350,10 @@ class Session:
         self.auto_retry = False
         self.next_retry = 0
         self.approval_required = False
+        self.pending_exit = None
+        self.commands = queue.Queue()
+        self.reputation = None
+        self.interactive_action = None
 
     def emit(self, kind, **fields):
         row = {"time": datetime.datetime.now().astimezone().isoformat(), "kind": kind, **fields}
@@ -438,7 +444,7 @@ class Session:
                 continue
         return approved
 
-    def check_egress(self):
+    def check_egress(self, expected_ip=None):
         with self.probe_lock:
             conn = http.client.HTTPSConnection("127.0.0.1", self.core_port, timeout=8,
                                                context=ssl.create_default_context())
@@ -462,18 +468,106 @@ class Session:
                         raise ValueError('invalid country')
                 except ValueError:
                     raise ConnectivityError('出口探测服务未返回有效结果')
-                if (trace.get("ip") != self.settings["expected_ip"]
+                if (trace.get("ip") != (expected_ip or self.settings["expected_ip"])
                         or trace.get("loc") != self.settings["expected_country"]):
                     self.approval_required = True
                     self.auto_retry = False
                     self.gate.trip('出口发生变化，等待人为批准')
-                    self.emit('IP_CHANGED',ip=trace.get('ip'),country=trace.get('loc'),message='出口发生变化，受控连接已关闭。请退出 Claude，在向导中重新核验并明确批准。')
+                    if not self.pending_exit or (self.pending_exit['ip'],self.pending_exit['country'])!=(trace['ip'],trace['loc']):
+                        self.pending_exit={'id':secrets.token_urlsafe(18),'ip':trace['ip'],'country':trace['loc']}
+                    self.emit('IP_CHANGED',ip=trace['ip'],country=trace['loc'],proposal_id=self.pending_exit['id'],
+                              can_approve=self.interactive_action is not None and trace['loc']==self.settings['expected_country'],
+                              message='出口发生变化，受控连接已关闭。请查看新出口与来源检查，手动确认后才会更新。')
+                    if self.reputation:self.reputation.request(trace['ip'])
                     raise ApprovalRequired("出口不一致：检测到 " + str(trace.get("ip")) + " (" + str(trace.get("loc")) + ")；请重新核验并批准。")
                 self.emit("EGRESS_OK", ip=trace["ip"], country=trace["loc"])
             finally:
                 conn.close()
 
+    def reputation_json(self,host,path):
+        if host not in {source['host'] for source in ip_reputation.SOURCES}:raise GuardError('未知检查来源')
+        if self.stop.is_set() or self.core is None or self.core.poll() is not None:raise GuardError('检查出口不可用')
+        check_controller(self.settings)
+        conn=http.client.HTTPSConnection('127.0.0.1',self.core_port,timeout=5,context=ssl.create_default_context())
+        conn.set_tunnel(host,443,{'Proxy-Authorization':'Basic '+self.auth})
+        deadline=time.monotonic()+6
+        def abort():
+            with contextlib.suppress(OSError,AttributeError):conn.sock.shutdown(socket.SHUT_RDWR)
+            conn.close()
+        timer=threading.Timer(6,abort);timer.daemon=True;timer.start()
+        try:
+            conn.request('GET',path,headers={'Host':host,'Accept':'application/json'})
+            if time.monotonic()>deadline:raise TimeoutError('reference timed out')
+            response=conn.getresponse()
+            if response.status!=200:raise GuardError('来源暂不可用或达到额度')
+            data=response.read(131073)
+            if len(data)>131072:raise GuardError('来源结果过大')
+            return json.loads(data)
+        finally:timer.cancel();conn.close()
+
+    def enable_reputation(self):
+        if self.settings.get('ip_reputation_enabled',True):
+            self.reputation=ip_reputation.Monitor(self.reputation_json,
+                lambda report:self.emit('IP_REPUTATION',report=report),RUNTIME/'ip-reputation.json')
+
+    def approve_exit(self,command,network_event=None):
+        """Only explicit, matching UI consent may update a same-country exit."""
+        candidate=self.pending_exit
+        if not candidate or command.get('proposal_id')!=candidate['id'] or command.get('ip')!=candidate['ip']:
+            self.emit('APPROVAL_FAILED',message='检测结果已更新，请重新确认当前出口。')
+            return False
+        if network_event:network_event.clear()
+        self.gate.trip('正在核验人工确认的新出口')
+        revision=self.gate.checkpoint()
+        try:
+            ip_reputation.public_ip(candidate['ip'])
+            if candidate['country']!=self.settings['expected_country']:raise ApprovalRequired('出口地区不同，请从设置重新配置。')
+            if self.core is None or self.core.poll() is not None:raise GuardError('专用出口已停止，请重新检查。')
+            check_controller(self.settings);selected_node(self.settings)
+            if enhanced(self.settings):self.filter_pid=system_filter.inspect(self.settings,getattr(self,'filter_pid',None))
+            self.check_egress(expected_ip=candidate['ip'])
+            check_controller(self.settings);selected_node(self.settings)
+            if enhanced(self.settings):system_filter.inspect(self.settings,self.filter_pid)
+            previous=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGUSR1,signal.SIGUSR2,signal.SIGTERM,signal.SIGINT})
+            try:
+                with self.gate.lock:
+                    if self.stop.is_set() or self.gate.checkpoint()!=revision:raise NetworkChanged('核验期间网络又发生变化，请重新确认。')
+                    path=ROOT/'settings.json'
+                    if path.is_symlink() or json.loads(path.read_text())!=self.settings:raise ApprovalRequired('配置已发生变化，请重新核验。')
+                    updated={**self.settings,'expected_ip':candidate['ip'],'ip_approved_at':datetime.datetime.now().astimezone().isoformat()}
+                    with tempfile.NamedTemporaryFile(dir=ROOT,prefix='.approved-ip-',delete=False,mode='w') as file:
+                        staged=Path(file.name)
+                        try:
+                            os.fchmod(file.fileno(),0o600);json.dump(updated,file,ensure_ascii=False,indent=2);file.write('\n');file.flush();os.fsync(file.fileno())
+                            os.replace(staged,path)
+                        finally:staged.unlink(missing_ok=True)
+                    self.settings=updated
+                    self.gate.reopen(revision)
+                    self.pending_exit=None;self.approval_required=False;self.failed=False;self.auto_retry=False
+            finally:signal.pthread_sigmask(signal.SIG_SETMASK,previous)
+            self.emit('IP_APPROVED',ip=candidate['ip'],country=candidate['country'],proposal_id=candidate['id'])
+            self.audit_wake.set()
+            if self.audit_thread is not None and not self.audit_thread.is_alive():self.start_audits()
+            if self.child is not None:self.emit('RESUMED',message='新出口已确认，连接已恢复。',automatic=False)
+            return True
+        except Exception as error:
+            self.gate.trip('新出口未通过确认');self.failed=True;self.auto_retry=False
+            newer_candidate=self.pending_exit is not candidate and self.pending_exit and self.pending_exit['country']==self.settings['expected_country']
+            self.emit('APPROVAL_FAILED',message=str(error) if isinstance(error,(GuardError,system_filter.FilterError)) else '新出口核验未完成，请重试。',
+                      requires_reconfigure=isinstance(error,system_filter.FilterError) or (isinstance(error,ApprovalRequired) and not newer_candidate))
+            return False
+
+    def read_commands(self,stream):
+        while not self.stop.is_set():
+            line=stream.readline(4097)
+            if not line:return
+            if len(line)>4096:continue
+            try:command=json.loads(line)
+            except ValueError:continue
+            if isinstance(command,dict) and command.get('action') in ('approve_ip','risk_refresh'):self.commands.put(command)
+
     def audit_environment(self):
+        if self.reputation:self.reputation.request((self.pending_exit or {}).get('ip',self.settings['expected_ip']))
         current=environment_checks.snapshot(self.settings.get('claude_app','/Applications/Claude.app'))
         config=controller(self.settings,'configs')
         with self.lock:
@@ -593,7 +687,20 @@ class Session:
                         self.request_stop()
                         self.emit('SESSION_ENDED', message='Guard 已退出，连接服务已结束。')
                         return
+                while not self.commands.empty():
+                    command=self.commands.get_nowait()
+                    if command['action']=='risk_refresh':
+                        if self.reputation:self.reputation.request((self.pending_exit or {}).get('ip',self.settings['expected_ip']),force=True)
+                    elif self.approve_exit(command,network_event):
+                        last_probe=time.monotonic()
+                        if self.child is None:
+                            if self.interactive_action=='launch':
+                                try:self.launch()
+                                except Exception as error:self.fail(str(error));self.stop.set()
+                            else:
+                                self.emit('CHECK_COMPLETE',message='新出口已确认；本次没有启动 Claude');self.stop.set()
                 if self.failed:
+                    if self.reputation and self.pending_exit:self.reputation.request(self.pending_exit['ip'])
                     manual = self.resume_requested.is_set()
                     if manual or (self.auto_retry and time.monotonic() >= self.next_retry):
                         self.resume_requested.clear()
@@ -604,6 +711,7 @@ class Session:
                     continue
                 if self.core.poll() is not None:
                     raise GuardError("专用出口进程停止")
+                if self.reputation:self.reputation.request(self.settings['expected_ip'])
                 check_controller(self.settings)
                 if hasattr(self, 'filter_pid'):
                     system_filter.inspect(self.settings, self.filter_pid)
@@ -629,6 +737,7 @@ class Session:
                 self.fail(reason, recoverable=recoverable)
 
     def close(self):
+        if self.reputation:self.reputation.close()
         self.audit_stop.set()
         self.audit_wake.set()
         if self.audit_thread:self.audit_thread.join(timeout=12)
@@ -655,6 +764,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["check", "launch"])
     parser.add_argument('--protection', choices=['proxy', 'enhanced'])
+    parser.add_argument('--interactive-approval',action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
     RUNTIME.mkdir(parents=True, exist_ok=True)
@@ -669,6 +779,10 @@ def main():
     if args.protection:
         settings['protection_mode'] = args.protection
     session = Session(settings)
+    if args.interactive_approval:
+        session.interactive_action=args.action
+        session.enable_reputation()
+        threading.Thread(target=session.read_commands,args=(sys.stdin,),daemon=True).start()
     network_event = threading.Event()
     def network_changed(*_):
         session.gate.trip("系统网络发生变化")
@@ -694,10 +808,17 @@ def main():
         if args.action == 'launch' and enhanced(settings):
             try: session.filter_pid = system_filter.wait_ready(settings)
             except (OSError, ValueError, system_filter.FilterError) as exc: raise GuardError(str(exc))
-        session.start(create_gateway=args.action == 'launch')
+        try:session.start(create_gateway=args.action == 'launch')
+        except ApprovalRequired:
+            if not args.interactive_approval or not session.pending_exit:raise
+            session.fail('新出口等待人工确认。')
+            session.watch(network_event)
+            return 1 if session.failed else 0
+        if session.reputation:session.reputation.request(session.settings['expected_ip'])
         session.start_audits()
         if args.action == "check":
             session.emit("CHECK_COMPLETE", message="仅检查完成，没有启动 Claude")
+            if session.reputation:session.reputation.finished.wait(6)
             return 0
         if network_event.is_set() or session.stop.is_set():
             raise GuardError("检查期间系统状态改变，禁止启动")

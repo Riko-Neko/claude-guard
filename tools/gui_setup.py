@@ -20,10 +20,11 @@ import guard
 import configure_vpn
 from admin_authorization import authorize, AuthorizationError
 STAGED_FILES={'tools':['lulu_setup.py','check_lulu_maintenance.py'],
-              'src':['lulu_archive.py','guard.py','system_filter.py','environment_checks.py']}
+              'src':['lulu_archive.py','guard.py','system_filter.py','environment_checks.py','ip_reputation.py']}
 EMBEDDED=False
 REQUEST_ID=0
 ENVIRONMENT_INTERVAL=3600
+IP_REPUTATION_ENABLED=True
 CANCEL_REQUESTED=False
 
 def request_cancel(*_):
@@ -53,6 +54,7 @@ def load_resume(protection):
         if (settings.get('configured') is True and settings.get('protected_launch_enabled') is not True
             and settings.get('protection_mode')==protection
             and settings.get('environment_check_seconds')==ENVIRONMENT_INTERVAL
+            and settings.get('ip_reputation_enabled',True)==IP_REPUTATION_ENABLED
             and progress.get('stage') in ('dependency','policy','validation','enable')
             and progress.get('settings_sha256')==progress_fingerprint(settings)):
             return settings,progress['stage']
@@ -205,6 +207,7 @@ def main(protection='enhanced',restart=False):
     # Saving revokes old launch permission before any maintenance occurs.
     settings['protection_mode']=protection
     settings['environment_check_seconds']=ENVIRONMENT_INTERVAL
+    settings['ip_reputation_enabled']=IP_REPUTATION_ENABLED
     baseline=settings.get('environment_baseline',{})
     dialog('确认环境检查基准','确认设备环境检测基准。',('取消','确认并继续'),details={'timezone':baseline.get('timezone','未确认'),'claude_version':baseline.get('claude_version','未确认')})
     configure_vpn.save(settings)
@@ -286,9 +289,11 @@ if __name__=='__main__':
     parser.add_argument('--embedded',action='store_true')
     parser.add_argument('--restart',action='store_true')
     parser.add_argument('--environment-interval',type=int,choices=[900,3600,10800],default=3600)
+    parser.add_argument('--ip-reputation',choices=['enabled','disabled'],default='enabled')
     args=parser.parse_args()
     EMBEDDED=args.embedded
     ENVIRONMENT_INTERVAL=args.environment_interval
+    IP_REPUTATION_ENABLED=args.ip_reputation=='enabled'
     signal.signal(signal.SIGUSR1,request_cancel)
     (ROOT/'runtime').mkdir(exist_ok=True)
     lock=(ROOT/'runtime/setup.lock').open('a')

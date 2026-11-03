@@ -16,6 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var leakPending = Data()
     var pipe: Pipe?
     var pending = Data()
+    var backendInput: Pipe?
+    var pendingExitID = ""
+    var canApproveExit = false
+    var approvalSending = false
+    var reputationReport: [String: Any]?
+    var reputationOption = true
+    var pendingSetupMode: String?
     var approvedPID: Int32?
     var blocked = false
     var resuming = false
@@ -224,10 +231,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "invalidatedAt": connection.invalidatedAt,
                 "group": settings["proxy_group"] as? String ?? "—", "node": settings["expected_node"] as? String ?? "—",
                 "approvalRequired": connection.approvalRequired,
+                "canApproveExit": canApproveExit && backend != nil && !approvalSending,
+                "approvalSending": approvalSending,
+                "reputationEnabled": settings["ip_reputation_enabled"] as? Bool ?? true,
+                "reputation": reputationSnapshot(),
                 "connectionTitle": interface.tr(connection.titleKey), "connectionReason": connection.hasFailure ? interface.tr(connection.reason) : "",
                 "active": backend != nil, "paused": backend != nil && blocked,
                 "busy": setupProcess != nil || resuming,
                 "statusText": interface.tr(status)]
+    }
+
+    func reputationSnapshot() -> Any {
+        guard let report = reputationReport, report["ip"] as? String == latestIP else { return NSNull() }
+        return report
+    }
+
+    func sendBackend(_ command: [String: Any]) {
+        guard let input = backendInput, backend?.isRunning == true,
+              var data = try? JSONSerialization.data(withJSONObject: command) else { return }
+        data.append(10)
+        do { try input.fileHandleForWriting.write(contentsOf: data) }
+        catch { approvalSending = false; notify("connectionFailed", "连接服务已结束，请重新检查。", alarm: true) }
     }
 
     func interfaceAction(_ body: [String: Any]) {
@@ -237,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let mode = body["mode"] as? String, ["proxy", "enhanced"].contains(mode),
                   let interval = body["interval"] as? Int, [900,3600,10800].contains(interval) else { return }
             environmentInterval = interval
+            reputationOption = body["reputationEnabled"] as? Bool ?? true
             restartSetup = body["restart"] as? Bool == true
             beginSetup(mode)
         case "reply":
@@ -258,6 +283,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case "check": checkOnly()
         case "pause": stopSession()
         case "results": showEnvironment()
+        case "riskDetails":
+            interface.showSettings(); interface.emit(["kind":"riskDetailsOpened"])
+        case "riskSource":
+            let urls = ["ipquery":"https://ipquery.io/sources", "proxycheck":"https://proxycheck.io/api/", "ipapi":"https://ipapi.is/free-tier.html"]
+            if let source = body["source"] as? String, let value = urls[source], let url = URL(string:value) { NSWorkspace.shared.open(url) }
+        case "refreshRisk":
+            guard setupProcess == nil else { return }
+            if backend != nil { sendBackend(["action":"risk_refresh"]) }
+            else if hasConfiguredProfile() { checkOnly() }
+        case "approveIP":
+            guard canApproveExit, !approvalSending, !pendingExitID.isEmpty, backend?.isRunning == true else { return }
+            approvalSending = true
+            sendBackend(["action":"approve_ip", "proposal_id":pendingExitID, "ip":latestIP])
+            interface.refreshMenu(); interface.refreshCriticalDetails()
         case "localChecks": openLeakWizard()
         case "help": showHelp()
         case "logs": showLogs()
@@ -291,7 +330,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func launchClaude() {
         guard setupProcess == nil && !resuming else { return }
-        if connection.approvalRequired { openInstaller(); return }
+        if connection.approvalRequired {
+            if backend == nil { checkOnly() } else { openInstaller() }
+            return
+        }
         if let process = backend {
             guard blocked && process.isRunning else { return }
             resuming = true
@@ -330,6 +372,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func loadLastCheck() {
         connection = GuardConnectionPresentation()
+        if let data = try? Data(contentsOf: root.appendingPathComponent("runtime/ip-reputation.json")) {
+            reputationReport = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
+        }
         let files = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("runtime"),
             includingPropertiesForKeys: nil)) ?? []
         for url in files.filter({ $0.pathExtension == "jsonl" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
@@ -362,13 +407,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let process = Process()
         process.executableURL = pythonExecutable
         process.arguments = [root.appendingPathComponent("src/guard.py").path, action,
-                             "--protection", action == "launch" ? selectedProtection : configuredProtection()]
+                             "--protection", action == "launch" ? selectedProtection : configuredProtection(), "--interactive-approval"]
         var env = GuardChildEnvironment.make(ProcessInfo.processInfo.environment, language: interface.language)
         env["CLAUDE_GUARD_UI_PID"] = String(getpid())
         env["PYTHONUNBUFFERED"] = "1"
         env["CLAUDE_GUARD_LANGUAGE"] = interface.language
         process.environment = env
         let output = Pipe()
+        let input = Pipe(); process.standardInput = input; backendInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         pipe = output; backend = process; approvedPID = nil; blocked = false; resuming = false; pending = Data()
@@ -389,11 +435,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 guard self.backend === process else { return }
                 self.pipe?.fileHandleForReading.readabilityHandler = nil
                 self.backend = nil; self.pipe = nil; self.approvedPID = nil; self.resuming = false
+                try? self.backendInput?.fileHandleForWriting.close()
+                self.backendInput = nil; self.canApproveExit = false; self.approvalSending = false; self.pendingExitID = ""
+                self.interface.refreshCriticalDetails()
                 let hadFailure = self.connection.hasFailure
                 self.connection.backendEnded()
                 self.blocked = self.connection.hasFailure
                 self.refreshAvailability()
                 if self.continuePendingLifecycle() { return }
+                if let mode = self.pendingSetupMode {
+                    self.pendingSetupMode = nil; self.beginSetup(mode); return
+                }
                 if self.connection.hasFailure {
                     self.display(self.interface.tr(self.connection.titleKey), symbol: "exclamationmark.shield.fill")
                     if !hadFailure {
@@ -412,6 +464,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         do { try process.run() }
         catch {
             backend = nil; pipe = nil
+            backendInput = nil
             connection.backendEnded(); blocked = true
             refreshAvailability()
             display("连接保护无法启动", symbol: "shield.slash.fill")
@@ -428,6 +481,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   let kind = row["kind"] as? String else { continue }
             connection.receive(row)
             switch kind {
+            case "IP_REPUTATION":
+                if let report = row["report"] as? [String:Any], report["ip"] as? String == latestIP {
+                    reputationReport = report
+                    interface.refreshMenu(); interface.refreshCriticalDetails()
+                }
+            case "IP_APPROVED":
+                pendingExitID = ""; canApproveExit = false; approvalSending = false
+                interface.refreshMenu(); interface.refreshCriticalDetails()
+            case "APPROVAL_FAILED":
+                approvalSending = false
+                if row["requires_reconfigure"] as? Bool == true { canApproveExit = false }
+                if connection.approvalRequired { notify("approvalFailed", row["message"] as? String ?? "新出口核验未完成。", alarm:true) }
+                interface.refreshMenu(); interface.refreshCriticalDetails()
             case "EGRESS_OK":
                 latestIP = row["ip"] as? String ?? "未记录"
                 latestCountry = row["country"] as? String ?? "未记录"
@@ -464,12 +530,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if !alreadyBlocked { notify("Claude 连接已暂停", row["message"] as? String ?? "VPN 状态发生变化，Claude 的受保护连接已断开。请退出 Claude、检查 VPN，再从 Guard 菜单重新启动。", alarm: true) }
             case "IP_CHANGED":
                 blocked = true
+                pendingExitID = row["proposal_id"] as? String ?? ""
+                canApproveExit = row["can_approve"] as? Bool == true
+                approvalSending = false
                 latestIP = row["ip"] as? String ?? "未记录"
                 latestCountry = row["country"] as? String ?? "未记录"
                 display("出口变化 · 等待人为批准", symbol: "exclamationmark.shield.fill")
                 let settings = interfaceState()
                 let body = interface.tr("approvedIP") + ": " + (settings["approvedIP"] as? String ?? "—") + "\n" +
-                    interface.tr("observedIP") + ": " + latestIP + " (" + latestCountry + ")\n\n" + interface.tr("exitApprovalBody")
+                    interface.tr("observedIP") + ": " + latestIP + " (" + latestCountry + ")\n\n" + interface.tr(canApproveExit ? "exitApprovalBody" : "exitReconfigureBody")
                 notify("出口 IP 发生变化", body, alarm: true)
             case "ENVIRONMENT_WARNING", "LEAK_WARNING":
                 if !blocked { display("环境检查需要复查 · 连接未暂停", symbol: "exclamationmark.shield") }
@@ -559,6 +628,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func beginSetup(_ mode: String) {
+        if let process = backend, approvedPID == nil && connection.approvalRequired && setupProcess == nil {
+            pendingSetupMode = mode
+            process.terminate()
+            return
+        }
         if backend != nil || setupProcess != nil {
             interface.emit(["kind":"finished", "success":false])
             interfaceAction(["action":"closeClaude"])
@@ -577,7 +651,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         process.executableURL = pythonExecutable
         process.environment = GuardChildEnvironment.make(ProcessInfo.processInfo.environment, language: interface.language)
         process.arguments = [root.appendingPathComponent("tools/gui_setup.py").path, "--protection", mode,
-                             "--embedded", "--environment-interval", String(environmentInterval)]
+                             "--embedded", "--environment-interval", String(environmentInterval),
+                             "--ip-reputation", reputationOption ? "enabled" : "disabled"]
         if restartSetup { process.arguments?.append("--restart") }
         let output = Pipe()
         let input = Pipe()

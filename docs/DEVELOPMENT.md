@@ -24,7 +24,7 @@
 python3 build.py
 ```
 
-產生 `dist/ClaudeGuard-0.10.17.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
+產生 `dist/ClaudeGuard-0.11.0.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
 
 ## 自動測試
 
@@ -33,6 +33,7 @@ python3 -m unittest discover -s tests
 node tests/test_interface_flow.js
 node tests/test_guard_alerts.js
 node tests/test_setup_selection.js
+node tests/test_ip_risk_ui.js
 ```
 
 測試不啟動 Claude、不安裝 LuLu、不修改正在使用的網路。部分測試會編譯 Swift／C、在暫存目錄產生格式相容性資料或使用本機回環連線。獨立的 `tests/verify_lulu_flow.py` 是安裝向導的驗收入口，會檢查實際過濾和外網探針，不屬於上述 unittest 指令。
@@ -44,6 +45,12 @@ node tests/test_setup_selection.js
 ## 連線恢復
 
 臨時連通故障先關閉受控連線，每次復查結束約 5 秒後再試。只有原節點、批准出口及所選保護檢查均通過才恢復。曾觀察到出口或節點參數改變時，必須重新批准。使用者主動暫停／退出不會被自動恢復。
+
+## IP 來源檢查與人工批准
+
+`src/ip_reputation.py` 只處理正規化、快取及並行更新，傳輸由 Session 注入，所有 HTTPS 查詢固定經私有核心與已選節點，沒有直連降級。來源結果以 `IP_REPUTATION` 事件增量送往介面，舊 IP 的遲到結果不更新目前畫面。
+
+介面透過私有 stdin 管道送出 `approve_ip`（IP 與隨機 proposal_id）或 `risk_refresh`。人工批准再次檢查出口、國家、節點、TUN 及增強過濾狀態，通過後原子寫入新基準，閘門版本必須仍一致。來源風險評分不參與放行決策；純檢查會話不會啟動 Claude。相關測試使用替身、暫存設定與假來源，完整來源限制見 [IP_REPUTATION.md](IP_REPUTATION.md)。
 
 ## 發行
 

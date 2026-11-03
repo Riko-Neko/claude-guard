@@ -20,5 +20,6 @@ jobs:
           node tests/test_interface_flow.js
           node tests/test_guard_alerts.js
           node tests/test_setup_selection.js
+          node tests/test_ip_risk_ui.js
       - name: Build without installing
         run: python3 build.py

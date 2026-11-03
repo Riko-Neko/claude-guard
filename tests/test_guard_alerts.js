@@ -12,8 +12,8 @@ assert.equal(elements.get('#live-notice-body').textContent,'Fixture exit changed
 assert.equal(elements.get('#value-ip').textContent,'192.0.2.1','Settings must distinguish approved IP from observed IP');
 window.guardEvent({kind:'state',state:{...failure,view:'menu'}});
 const button=elements.get('#app').innerHTML.match(/<button class="primary menu-primary"[^>]*>[^<]*<\/button>/)[0];
-assert(button.includes('data-action="settings"'),'Changed IP must route to explicit approval, not retry a failed launch');
-assert(button.includes('重新核驗出口'));
+assert(button.includes('data-action="check"'),'Changed IP must route to explicit approval, not retry a failed launch');
+assert(button.includes('重新檢測出口'));
 assert.equal(elements.get('#menu-status').textContent,failure.statusText);
 window.guardEvent({kind:'state',state:{...failure,view:'setup'}});
 window.guardEvent({kind:'report',checks:[{id:'route',status:'observed',message:'Historical route observation',sourceTime:'2026-01-01T00:00:00Z',stale:true}]});

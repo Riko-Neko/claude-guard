@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '0.10.17'
+VERSION = '0.11.0'
 DIST = ROOT / 'dist'
 DIST.mkdir(exist_ok=True)
 TOOLS = ['gui_setup.py', 'configure_vpn.py', 'ensure_lulu.py', 'initialize_filter.py', 'recover_lulu_storage.py',
@@ -36,6 +36,8 @@ with tempfile.TemporaryDirectory(prefix='claude-guard-package-') as directory:
     shutil.copy2(ROOT / 'README.zh-CN.md', runtime / 'README.zh-CN.md')
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(ROOT / name, runtime / name)
+    (runtime / 'docs').mkdir()
+    shutil.copy2(ROOT / 'docs/IP_REPUTATION.md', runtime / 'docs/IP_REPUTATION.md')
     (runtime / 'assets').mkdir()
     shutil.copy2(ROOT / 'assets/connection-flow.svg', runtime / 'assets/connection-flow.svg')
     shutil.copytree(ROOT / 'interface', resources / 'Interface')
@@ -46,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='claude-guard-package-') as directory:
     info = {'CFBundleIdentifier': 'local.rikoneko.claude-guard', 'CFBundleName': 'Claude Guard',
             'CFBundleDisplayName': 'Claude Guard', 'CFBundleExecutable': 'ClaudeGuard',
             'CFBundleIconFile': 'Guard.icns', 'CFBundlePackageType': 'APPL',
-            'CFBundleVersion': '30', 'CFBundleShortVersionString': VERSION,
+            'CFBundleVersion': '31', 'CFBundleShortVersionString': VERSION,
             'LSUIElement': True, 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True}
     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copy2(ROOT / 'src/ClaudeGuard.swift', stage / 'main.swift')

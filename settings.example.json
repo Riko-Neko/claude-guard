@@ -15,6 +15,7 @@
   "health_interval_seconds": 1,
   "loopback_exception": true,
   "environment_check_seconds": 3600,
+  "ip_reputation_enabled": true,
   "allow_system_proxy": false,
   "connection_warning_per_minute": 600
 }

@@ -36,6 +36,8 @@ struct GuardConnectionPresentation {
                 reason = row["message"] as? String ?? "连接检查未通过，请查看日志。"
             }
         case "RESUMING": if !approvalRequired { statusKey = "checkBusy" }
+        case "IP_APPROVED":
+            approvalRequired = false; reason = ""; statusKey = "checkBusy"
         case "CHECK_COMPLETE", "RUNNING", "RESUMED":
             approvalRequired = false; reason = ""
             statusKey = kind == "CHECK_COMPLETE" ? "idle" : "running"
