@@ -24,13 +24,14 @@
 python3 build.py
 ```
 
-產生 `dist/ClaudeGuard-0.10.14.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
+產生 `dist/ClaudeGuard-0.10.15.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
 
 ## 自動測試
 
 ```sh
 python3 -m unittest discover -s tests
 node tests/test_interface_flow.js
+node tests/test_guard_alerts.js
 ```
 
 測試不啟動 Claude、不安裝 LuLu、不修改正在使用的網路。部分測試會編譯 Swift／C、在暫存目錄產生格式相容性資料或使用本機回環連線。獨立的 `tests/verify_lulu_flow.py` 是安裝向導的驗收入口，會檢查實際過濾和外網探針，不屬於上述 unittest 指令。

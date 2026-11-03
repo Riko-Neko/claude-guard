@@ -10,7 +10,7 @@
 
 ## 安装与配置
 
-从 [Releases](https://github.com/Riko-Neko/claude-guard/releases) 下载 `ClaudeGuard-0.10.14.pkg`，完全退出 Claude、Claude Code 与旧版 Guard 后再运行。完成后从“应用程序”打开 Claude Guard，在同一个窗口完成配置。
+从 [Releases](https://github.com/Riko-Neko/claude-guard/releases) 下载 `ClaudeGuard-0.10.15.pkg`，完全退出 Claude、Claude Code 与旧版 Guard 后再运行。完成后从“应用程序”打开 Claude Guard，在同一个窗口完成配置。
 
 安装优先尝试官方免重启激活。旧的待移除记录只作状态参考，不会阻止安装。若本次激活未完成，可稍后重试或自行选择普通模式；Guard 不会强迫重启或自动降低保护方式。现有 LuLu 设置会保留，并以“重新启用”标示。
 
@@ -30,6 +30,8 @@ LuLu 安装引导完成后，Guard 会接着应用规则并验证。临时连接
 睡眠、网络切换或检查超时后，先暂停受控连接，每次复查结束后约 5 秒再重试；原节点、出口与保护状态检查通过后自动恢复，不反复弹出相同告警。也可在盾牌菜单点击“重新检查并恢复连接”。若曾检测到出口或节点参数改变，则停止自动恢复，仍须退出 Claude 并重新核验批准。重开 Guard 不会接管已打开的 Claude；请先完全退出 Claude 和 Claude Code，再由 Guard 启动。增强设置完成后自动隐藏 LuLu 菜单栏图标，网络过滤继续运行。
 
 本地 DNS 与 WebRTC 检查不使用外部测试服务，不能证明不存在泄漏，也不能代表 Claude 自身的 WebRTC 行为。普通安装无法阻止绕过 Guard 的连接；LuLu 增强安装仍包含本机回环等例外，而且会在系统范围处理连接。
+
+出口变化或连接检查失败时，Guard 会显示自己的警告窗口，菜单及配置页也会保留原因；系统通知未授权或发送失败不会只剩提示音。检查记录会显示时间与过期状态，不能当作当前连接已通过。
 
 ## 关闭与移除
 

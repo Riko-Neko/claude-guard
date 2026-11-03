@@ -16,6 +16,8 @@ jobs:
       - name: Python regression tests
         run: python3 -m unittest discover -s tests
       - name: Interface event replay
-        run: node tests/test_interface_flow.js
+        run: |
+          node tests/test_interface_flow.js
+          node tests/test_guard_alerts.js
       - name: Build without installing
         run: python3 build.py

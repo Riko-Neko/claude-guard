@@ -1,0 +1,32 @@
+// Replay alert/state/report failures without opening any app or sending traffic.
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
+const root=path.resolve(__dirname,'..'),elements=new Map();
+function element(){let html='',text='';return {children:[],value:'',append(x){this.children.push(x);},scrollIntoView(){},set innerHTML(v){html=v;this.children=[];},get innerHTML(){return html;},set textContent(v){text=v;this.children=[];},get textContent(){return text+this.children.map(x=>x.textContent).join(' ');}};}
+const document={documentElement:{},querySelector(q){if(!elements.has(q))elements.set(q,element());return elements.get(q);},querySelectorAll(){return [];},createElement:element};
+const window={GUARD_STRINGS:JSON.parse(fs.readFileSync(path.join(root,'interface/strings.json'))),GUARD_VIEW:'setup',webkit:{messageHandlers:{guard:{postMessage(){}}}}};
+vm.runInContext(fs.readFileSync(path.join(root,'interface/app.js'),'utf8'),vm.createContext({window,document,Set,Date}));
+const failure={configured:true,allowed:true,active:false,busy:false,approvalRequired:true,statusText:'出口變化，等待確認',connectionTitle:'出口變化，等待確認',connectionReason:'Fixture exit changed',ip:'192.0.2.2',approvedIP:'192.0.2.1'};
+window.guardEvent({kind:'state',state:failure});
+assert(elements.get('#app').innerHTML.includes('id="live-notice"'),'Failure must remain visible in the setup window');
+assert.equal(elements.get('#live-notice-body').textContent,'Fixture exit changed');
+assert.equal(elements.get('#value-ip').textContent,'192.0.2.1','Settings must distinguish approved IP from observed IP');
+window.guardEvent({kind:'state',state:{...failure,view:'menu'}});
+const button=elements.get('#app').innerHTML.match(/<button class="primary menu-primary"[^>]*>[^<]*<\/button>/)[0];
+assert(button.includes('data-action="settings"'),'Changed IP must route to explicit approval, not retry a failed launch');
+assert(button.includes('重新核驗出口'));
+assert.equal(elements.get('#menu-status').textContent,failure.statusText);
+window.guardEvent({kind:'state',state:{...failure,view:'setup'}});
+window.guardEvent({kind:'report',checks:[{id:'route',status:'observed',message:'Historical route observation',sourceTime:'2026-01-01T00:00:00Z',stale:true}]});
+assert(elements.get('#report').textContent.includes('已過期'),'Cached checks must show freshness');
+assert(elements.get('#report').textContent.includes('2026-01-01'),'Cached checks must show their source timestamp');
+assert(!elements.get('#report').textContent.includes('VPN 與出口 · 完成'),'A local observation is not a fresh connectivity pass');
+window.guardEvent({kind:'settingsOpened'});
+assert(elements.get('#report').textContent===''||!elements.get('#app').innerHTML.includes('<section id="report" class="card" >'),'Reopening settings must clear the old report view');
+assert.equal(elements.get('#live-notice-body').textContent,'Fixture exit changed','Reopening settings must retain the unresolved connection failure');
+const recent=new Date(Date.now()-1000).toISOString();
+window.guardEvent({kind:'state',state:{connectionReason:'',connectionTitle:'',invalidatedAt:''}});
+window.guardEvent({kind:'report',checks:[{id:'route',status:'observed',message:'Recent observation',sourceTime:recent,stale:false}]});
+assert(elements.get('#report').textContent.includes('已記錄'));
+window.guardEvent({kind:'state',state:{...failure,invalidatedAt:new Date().toISOString()}});
+assert(elements.get('#report').textContent.includes('已過期'),'A new failure must invalidate an already-open report immediately');
+console.log('Alert replay passed: persistent failure, explicit approval, timestamped stale reports.');

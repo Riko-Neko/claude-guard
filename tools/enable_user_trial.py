@@ -61,7 +61,7 @@ def main():
     if current!=settings:raise guard.GuardError('配置在检查期间发生变化，请重新确认后继续。')
     settings.update(protected_launch_enabled=True,mode='controlled_proxy',loopback_exception=True,
                     system_filter_status=('lulu_4_5_6_ready_for_user_trial' if provider is not None else 'not_used'),
-                    launch_disabled_reason='',candidate_version='0.10.14')
+                    launch_disabled_reason='',candidate_version='0.10.15')
     temporary=path.with_suffix('.tmp')
     temporary.write_text(json.dumps(settings,ensure_ascii=False,indent=2)+'\n');temporary.chmod(0o600);temporary.replace(path)
     print('连接与保护配置已完成。请从 Guard 菜单启动 Claude。',flush=True)

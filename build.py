@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '0.10.14'
+VERSION = '0.10.15'
 DIST = ROOT / 'dist'
 DIST.mkdir(exist_ok=True)
 TOOLS = ['gui_setup.py', 'configure_vpn.py', 'ensure_lulu.py', 'initialize_filter.py', 'recover_lulu_storage.py',
@@ -46,11 +46,11 @@ with tempfile.TemporaryDirectory(prefix='claude-guard-package-') as directory:
     info = {'CFBundleIdentifier': 'local.rikoneko.claude-guard', 'CFBundleName': 'Claude Guard',
             'CFBundleDisplayName': 'Claude Guard', 'CFBundleExecutable': 'ClaudeGuard',
             'CFBundleIconFile': 'Guard.icns', 'CFBundlePackageType': 'APPL',
-            'CFBundleVersion': '27', 'CFBundleShortVersionString': VERSION,
+            'CFBundleVersion': '28', 'CFBundleShortVersionString': VERSION,
             'LSUIElement': True, 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True}
     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copy2(ROOT / 'src/ClaudeGuard.swift', stage / 'main.swift')
-    subprocess.run(['/usr/bin/xcrun', 'swiftc', '-O', '-module-cache-path', str(stage / 'ModuleCache'), str(ROOT / 'src/GuardInterface.swift'), str(stage / 'main.swift'),
+    subprocess.run(['/usr/bin/xcrun', 'swiftc', '-O', '-module-cache-path', str(stage / 'ModuleCache'), str(ROOT / 'src/GuardPresentation.swift'), str(ROOT / 'src/GuardInterface.swift'), str(stage / 'main.swift'),
                     '-framework', 'AppKit', '-framework', 'UserNotifications', '-framework', 'SystemConfiguration', '-framework', 'WebKit',
                     '-o', str(macos / 'ClaudeGuard')], check=True)
     subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(app)], check=True, capture_output=True)

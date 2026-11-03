@@ -44,6 +44,9 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     private var settingsReady = false
     private var waitingEvents = [[String: Any]]()
     private let popover = NSPopover()
+    private var criticalPanel: NSPanel?
+    private var criticalTitle: NSTextField?
+    private var criticalBody: NSTextField?
     private var tables = [String: [String: String]]()
     private var previewLanguage: String? = ProcessInfo.processInfo.arguments.contains("--preview-ui") ? "zh-Hant" : nil
     var language: String {
@@ -117,6 +120,56 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
     func closeMenu() { popover.close() }
+
+    func showCriticalAlert(title: String, body: String) {
+        if criticalPanel == nil {
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 260),
+                                styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            panel.title = "Claude Guard"
+            panel.isReleasedWhenClosed = false
+            panel.level = .floating
+            panel.hidesOnDeactivate = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            let heading = NSTextField(wrappingLabelWithString: "")
+            heading.font = .boldSystemFont(ofSize: 18)
+            heading.textColor = NSColor(calibratedRed: 0.72, green: 0.38, blue: 0.27, alpha: 1)
+            let details = NSTextField(wrappingLabelWithString: "")
+            details.font = .systemFont(ofSize: 13)
+            details.isSelectable = true
+            let review = NSButton(title: tr("reviewConnection"), target: self, action: #selector(reviewCriticalAlert))
+            review.bezelStyle = .rounded
+            let dismiss = NSButton(title: tr("acknowledgeAlert"), target: self, action: #selector(dismissCriticalAlert))
+            dismiss.bezelStyle = .rounded
+            let buttons = NSStackView(views: [dismiss, review])
+            buttons.orientation = .horizontal; buttons.alignment = .centerY; buttons.spacing = 12
+            let stack = NSStackView(views: [heading, details, buttons])
+            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 18
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            let view = panel.contentView!
+            view.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+                stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+                stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
+                stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -24),
+                heading.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                details.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            ])
+            criticalPanel = panel; criticalTitle = heading; criticalBody = details
+            panel.center()
+        }
+        criticalTitle?.stringValue = title
+        criticalBody?.stringValue = body
+        // Reuse one nonmodal panel; repeated events never stack modal dialogs.
+        criticalPanel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    @objc private func dismissCriticalAlert() { criticalPanel?.close() }
+    @objc private func reviewCriticalAlert() {
+        criticalPanel?.close()
+        onAction?(["action": "settings"])
+    }
+    func clearCriticalAlert() { criticalPanel?.close() }
     private func send(_ value: [String: Any], to web: WKWebView?) {
         guard let web = web, let data = try? JSONSerialization.data(withJSONObject: value),
               let json = String(data: data, encoding: .utf8) else { return }
@@ -126,7 +179,14 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         if settingsReady { send(value, to: settingsWeb) }
         else { waitingEvents.append(value) }
     }
-    func refreshMenu() { send(currentState(), to: menuWeb) }
+    func refreshMenu() {
+        let value = currentState()
+        let state = value["state"] as? [String: Any] ?? [:]
+        let hasNotice = !(state["connectionReason"] as? String ?? "").isEmpty
+        popover.contentSize = NSSize(width: 350, height: hasNotice ? 540 : 365)
+        send(value, to: menuWeb)
+        if settingsReady { send(value, to: settingsWeb) }
+    }
     func currentState() -> [String: Any] {
         var value = state?() ?? [:]
         value["language"] = language

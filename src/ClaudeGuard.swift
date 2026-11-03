@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var approvedPID: Int32?
     var blocked = false
     var resuming = false
+    var connection = GuardConnectionPresentation()
     var store: SCDynamicStore?
     var source: CFRunLoopSource?
     var externalWarnings = Set<pid_t>()
@@ -164,16 +165,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func notify(_ title: String, _ body: String, alarm: Bool = false) {
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            if granted {
-                let content = UNMutableNotificationContent()
-                content.title = self.interface.tr(title); content.body = self.interface.tr(body)
-                if alarm { content.sound = .default }
-                center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-            } else if alarm {
-                DispatchQueue.main.async { NSSound.beep() }
-            }
-        }
+        let heading = interface.tr(title), detail = interface.tr(body)
+        GuardNoticeDelivery.send(alarm: alarm, showInApp: { [weak self] in
+            DispatchQueue.main.async { self?.interface.showCriticalAlert(title: heading, body: detail) }
+        }, authorize: { reply in
+            center.requestAuthorization(options: [.alert, .sound], completionHandler: reply)
+        }, post: { reply in
+            let content = UNMutableNotificationContent()
+            content.title = heading; content.body = detail
+            if alarm { content.sound = .default }
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil),
+                       withCompletionHandler: reply)
+        }, record: { [weak self] row in self?.recordPresentationEvent(row) })
+    }
+
+    func recordPresentationEvent(_ fields: [String: Any]) {
+        var row = fields
+        row["time"] = ISO8601DateFormatter().string(from: Date())
+        guard var data = try? JSONSerialization.data(withJSONObject: row) else { return }
+        data.append(10)
+        let path = root.appendingPathComponent("runtime/ui-events.jsonl").path
+        let descriptor = open(path, O_WRONLY | O_CREAT | O_APPEND, mode_t(0o600))
+        guard descriptor >= 0 else { return }
+        fchmod(descriptor, mode_t(0o600))
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try? file.write(contentsOf: data)
+        try? file.close()
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
@@ -195,9 +212,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func interfaceState() -> [String: Any] {
-        let status = resuming ? "checkBusy" : (setupProcess != nil ? "busy" : (backend != nil ? (blocked ? "paused" : "running") : "idle"))
+        let status = resuming ? "checkBusy" : (setupProcess != nil ? "busy" : connection.statusKey)
+        let settings = ((try? Data(contentsOf: root.appendingPathComponent("settings.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
         return ["mode": configuredProtection(), "interval": environmentInterval, "configured": protectedLaunchAllowed(),
                 "ip": latestIP == "未记录" ? "—" : latestIP, "region": latestCountry, "allowed": protectedLaunchAllowed(),
+                "approvedIP": settings["configured"] as? Bool == true ? (settings["expected_ip"] as? String ?? "—") : "—",
+                "observedAt": connection.observedAt,
+                "invalidatedAt": connection.invalidatedAt,
+                "group": settings["proxy_group"] as? String ?? "—", "node": settings["expected_node"] as? String ?? "—",
+                "approvalRequired": connection.approvalRequired,
+                "connectionTitle": interface.tr(connection.titleKey), "connectionReason": connection.hasFailure ? interface.tr(connection.reason) : "",
                 "active": backend != nil, "paused": backend != nil && blocked,
                 "busy": setupProcess != nil || resuming,
                 "statusText": interface.tr(status)]
@@ -264,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func launchClaude() {
         guard setupProcess == nil && !resuming else { return }
+        if connection.approvalRequired { openInstaller(); return }
         if let process = backend {
             guard blocked && process.isRunning else { return }
             resuming = true
@@ -286,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func refreshAvailability() {
         let allowed = protectedLaunchAllowed()
-        launchItem.title = allowed ? (backend != nil && blocked ? "重新检查并恢复连接" : "检查并启动 Claude") : "完成设置后可启动 Claude"
+        launchItem.title = connection.approvalRequired ? interface.tr("reviewExitAction") : (allowed ? (backend != nil && blocked ? "重新检查并恢复连接" : "检查并启动 Claude") : "完成设置后可启动 Claude")
         launchItem.isEnabled = allowed && (backend == nil || blocked) && setupProcess == nil && !resuming
         checkItem.isEnabled = backend == nil && setupProcess == nil
         setupItem?.isEnabled = backend == nil && setupProcess == nil
@@ -301,6 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func loadLastCheck() {
+        connection = GuardConnectionPresentation()
         let files = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("runtime"),
             includingPropertiesForKeys: nil)) ?? []
         for url in files.filter({ $0.pathExtension == "jsonl" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
@@ -312,10 +339,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     latestIP = row["ip"] as? String ?? "未记录"
                     latestCountry = row["country"] as? String ?? "未记录"
                 }
+                if row["kind"] as? String == "IP_CHANGED" {
+                    latestIP = row["ip"] as? String ?? "未记录"
+                    latestCountry = row["country"] as? String ?? "未记录"
+                }
+                connection.receive(row)
                 if row["kind"] as? String == "CHECK_COMPLETE" { saveCheckSummary(row) }
             }
         }
-        display(lastCheckText, symbol: "shield")
+        connection.restoreHistory()
+        blocked = connection.hasFailure
+        display(connection.hasFailure ? interface.tr(connection.titleKey) : lastCheckText, symbol: connection.hasFailure ? "exclamationmark.shield.fill" : "shield")
     }
 
     @objc func showResult() { showEnvironment() }
@@ -336,21 +370,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         pipe = output; backend = process; approvedPID = nil; blocked = false; resuming = false; pending = Data()
+        connection.beginCheck()
         launchItem.isEnabled = false; checkItem.isEnabled = false
         display("正在检查连接…", symbol: "shield.lefthalf.filled")
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if data.isEmpty { return }
-            DispatchQueue.main.async { self?.consume(data) }
+            DispatchQueue.main.async {
+                guard self?.backend === process else { return }
+                self?.consume(data)
+            }
         }
         process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                guard self.backend === process else { return }
                 self.pipe?.fileHandleForReading.readabilityHandler = nil
                 self.backend = nil; self.pipe = nil; self.approvedPID = nil; self.resuming = false
+                let hadFailure = self.connection.hasFailure
+                self.connection.backendEnded()
+                self.blocked = self.connection.hasFailure
                 self.refreshAvailability()
                 if self.continuePendingLifecycle() { return }
-                if !self.blocked {
+                if self.connection.hasFailure {
+                    self.display(self.interface.tr(self.connection.titleKey), symbol: "exclamationmark.shield.fill")
+                    if !hadFailure {
+                        self.notify(self.connection.titleKey, self.connection.reason, alarm: true)
+                    }
+                } else if !self.blocked {
                     if process.terminationStatus != 0 {
                         self.display("连接检查未完成", symbol: "shield.slash.fill")
                         self.notify("连接检查未完成", "请检查 Clash 的运行状态和所选节点，然后重新检查连接。", alarm: true)
@@ -363,6 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         do { try process.run() }
         catch {
             backend = nil; pipe = nil
+            connection.backendEnded(); blocked = true
             refreshAvailability()
             display("连接保护无法启动", symbol: "shield.slash.fill")
             notify("Claude Guard 无法运行", "请重新打开 Guard，或重新安装。", alarm: true)
@@ -376,6 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             pending.removeSubrange(pending.startIndex...newline)
             guard let row = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                   let kind = row["kind"] as? String else { continue }
+            connection.receive(row)
             switch kind {
             case "EGRESS_OK":
                 latestIP = row["ip"] as? String ?? "未记录"
@@ -383,6 +432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 saveCheckSummary(row)
             case "RUNNING":
                 approvedPID = (row["pid"] as? NSNumber)?.int32Value
+                interface.clearCriticalAlert()
                 display("Claude 连接保护已开启", symbol: "checkmark.shield.fill")
                 notify("连接保护已开启", "连接检查已通过，Claude 正在使用已设置的 VPN。")
             case "RESUMING":
@@ -390,10 +440,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 display("正在重新检查连接…", symbol: "shield.lefthalf.filled")
             case "RESUMED":
                 blocked = false; resuming = false
+                interface.clearCriticalAlert()
                 display("Claude 连接保护已开启", symbol: "checkmark.shield.fill")
                 notify("连接已恢复", "连接复查已通过，Claude 连接已恢复。")
             case "RESUME_FAILED":
                 blocked = true; resuming = false
+                if connection.approvalRequired {
+                    display(interface.tr("approvalRequired"), symbol: "exclamationmark.shield.fill")
+                    break
+                }
                 let retrying = row["retrying"] as? Bool == true
                 display(retrying ? "等待网络恢复…" : "Claude 连接已暂停", symbol: "exclamationmark.shield.fill")
                 // Automatic transient retries do not repeat the same alarm.
@@ -403,20 +458,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             case "BLOCKED":
                 let alreadyBlocked = blocked
                 blocked = true
+                if connection.approvalRequired { break }
                 display("Claude 连接已暂停", symbol: "exclamationmark.shield.fill")
                 if !alreadyBlocked { notify("Claude 连接已暂停", row["message"] as? String ?? "VPN 状态发生变化，Claude 的受保护连接已断开。请退出 Claude、检查 VPN，再从 Guard 菜单重新启动。", alarm: true) }
             case "IP_CHANGED":
                 blocked = true
+                latestIP = row["ip"] as? String ?? "未记录"
+                latestCountry = row["country"] as? String ?? "未记录"
                 display("出口变化 · 等待人为批准", symbol: "exclamationmark.shield.fill")
-                notify("出口 IP 发生变化", row["message"] as? String ?? "请退出 Claude，在设置向导中重新核验并批准新出口。", alarm: true)
+                let settings = interfaceState()
+                let body = interface.tr("approvedIP") + ": " + (settings["approvedIP"] as? String ?? "—") + "\n" +
+                    interface.tr("observedIP") + ": " + latestIP + " (" + latestCountry + ")\n\n" + interface.tr("exitApprovalBody")
+                notify("出口 IP 发生变化", body, alarm: true)
             case "ENVIRONMENT_WARNING", "LEAK_WARNING":
                 if !blocked { display("环境检查需要复查 · 连接未暂停", symbol: "exclamationmark.shield") }
                 notify("网络环境检查提醒", row["message"] as? String ?? "请查看环境检查结果。", alarm: true)
             case "CHECK_FAILED":
                 blocked = true
+                if connection.approvalRequired {
+                    display(interface.tr("approvalRequired"), symbol: "exclamationmark.shield.fill")
+                    break
+                }
                 display("连接检查未通过", symbol: "exclamationmark.shield.fill")
                 notify("连接检查未通过", row["message"] as? String ?? "本次未启动 Claude。", alarm: true)
             case "CHECK_COMPLETE":
+                blocked = false
+                interface.clearCriticalAlert()
                 saveCheckSummary(row)
                 display(lastCheckText, symbol: "checkmark.shield")
                 notify("网络检查通过", "当前 VPN 与已保存的设置一致。可以从菜单检查并启动 Claude。")
@@ -482,6 +549,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let process = backend else { return }
         if process.isRunning { process.terminate() }
         blocked = true
+        connection.receive(["kind":"BLOCKED", "message":interface.tr("manualPauseReason")])
         display("Claude 连接已暂停", symbol: "shield.slash.fill")
     }
 
@@ -548,6 +616,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.setupProcess = nil
                 self?.setupActive = false
                 self?.setupInput = nil
+                if finished.terminationStatus == 0 && self?.protectedLaunchAllowed() == true {
+                    self?.loadLastCheck()
+                    self?.interface.clearCriticalAlert()
+                }
                 self?.interface.emit(["kind":"finished", "success":finished.terminationStatus == 0])
                 self?.refreshAvailability()
                 if self?.continuePendingLifecycle() == true { return }
@@ -574,6 +646,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   let rows = report["checks"] as? [[String: Any]] else { continue }
             checks.append(contentsOf: rows.map { row in
                 var localized = row
+                let timestamp = report["time"] as? String ?? ""
+                localized["sourceTime"] = timestamp
+                localized["stale"] = GuardReportFreshness.stale(time: timestamp, invalidatedAt: connection.invalidatedAt,
+                                                               maxAge: TimeInterval(environmentInterval))
                 if let message = row["message"] as? String { localized["message"] = interface.tr(message) }
                 return localized
             })
