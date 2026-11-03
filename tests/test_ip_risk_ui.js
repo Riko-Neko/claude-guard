@@ -1,7 +1,7 @@
 // Source results and explicit approval controls; no app, browser or network.
 const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
 const root=path.resolve(__dirname,'..'),elements=new Map(),actions=[];
-function element(){let html='',text='';return {children:[],value:'',checked:false,append(x){this.children.push(x);},scrollIntoView(){},set innerHTML(v){html=v;this.children=[];},get innerHTML(){return html;},set textContent(v){text=v;this.children=[];},get textContent(){return text+this.children.map(x=>x.textContent).join(' ');}};}
+function element(){let html='',text='';return {children:[],value:'',checked:false,style:{setProperty(){}},append(x){this.children.push(x);},scrollIntoView(){},set innerHTML(v){html=v;this.children=[];},get innerHTML(){return html;},set textContent(v){text=v;this.children=[];},get textContent(){return text+this.children.map(x=>x.textContent).join(' ');}};}
 const document={documentElement:{},querySelector(q){if(!elements.has(q))elements.set(q,element());return elements.get(q);},querySelectorAll(){return [];},createElement:element};
 const window={GUARD_STRINGS:JSON.parse(fs.readFileSync(path.join(root,'interface/strings.json'))),GUARD_VIEW:'menu',webkit:{messageHandlers:{guard:{postMessage(x){actions.push(x);}}}}};
 vm.runInContext(fs.readFileSync(path.join(root,'interface/app.js'),'utf8'),vm.createContext({window,document,Set,Date}));

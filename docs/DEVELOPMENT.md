@@ -24,7 +24,7 @@
 python3 build.py
 ```
 
-產生 `dist/ClaudeGuard-0.11.0.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
+產生 `dist/ClaudeGuard-0.11.1.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
 
 ## 自動測試
 

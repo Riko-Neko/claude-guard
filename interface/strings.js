@@ -233,7 +233,8 @@ window.GUARD_STRINGS = {
     "riskHosting": "資料中心",
     "riskMobile": "行動網路",
     "riskDetected": "有標記",
-    "riskNotDetected": "未標記"
+    "riskNotDetected": "未標記",
+    "riskScale": "風險刻度：1% 綠色，100% 紅色"
   },
   "zh-Hans": {
     "configure": "安装与配置",
@@ -460,7 +461,8 @@ window.GUARD_STRINGS = {
     "riskHosting": "数据中心",
     "riskMobile": "移动网络",
     "riskDetected": "有标记",
-    "riskNotDetected": "未标记"
+    "riskNotDetected": "未标记",
+    "riskScale": "风险刻度：1% 绿色，100% 红色"
   },
   "en": {
     "configure": "Install & configure",
@@ -696,6 +698,7 @@ window.GUARD_STRINGS = {
     "riskHosting": "Datacenter",
     "riskMobile": "Mobile",
     "riskDetected": "Flagged",
-    "riskNotDetected": "Not flagged"
+    "riskNotDetected": "Not flagged",
+    "riskScale": "Risk scale: 1% green, 100% red"
   }
 };
