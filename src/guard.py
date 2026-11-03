@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import system_filter
 import environment_checks
 import ip_reputation
+from diagnostics import failure_diagnostic
 RUNTIME = ROOT / "runtime"
 
 
@@ -105,18 +106,18 @@ def selected_node(settings):
     return node
 
 
-def check_controller(settings):
+def check_controller(settings, require_tun=False):
     config = controller(settings, "configs")
     proxies = controller(settings, "proxies").get("proxies", {})
     if config.get("mode") != "rule":
         raise GuardError("Clash 不在规则模式")
-    if not config.get("tun", {}).get("enable") and not settings.get('allow_system_proxy', False):
+    if require_tun and not config.get("tun", {}).get("enable") and not settings.get('allow_system_proxy', False):
         raise TunRequired("TUN 未开启；如需仅使用系统代理，必须在向导中明确放行。")
     if proxies.get(settings.get("proxy_group", "AI"), {}).get("now") != settings["expected_node"]:
         raise GuardError("AI 组已切换，已关闭受保护连接")
     if config.get("mixed-port") != settings["base_proxy_port"]:
         raise GuardError("Clash 本地端口改变")
-    return True
+    return config
 
 
 def sandbox_profile(port):
@@ -354,6 +355,19 @@ class Session:
         self.commands = queue.Queue()
         self.reputation = None
         self.interactive_action = None
+        self.last_network_mode = None
+        self.network_mode_at = 0
+
+    def check_config(self):
+        config = check_controller(self.settings)
+        if isinstance(config,dict):
+            report = environment_checks.network_mode(config)
+            state = report['mode']
+            now = time.monotonic()
+            if state != self.last_network_mode or now-self.network_mode_at >= 5:
+                self.last_network_mode=state;self.network_mode_at=now
+                self.emit('NETWORK_MODE', report=report)
+        return config
 
     def emit(self, kind, **fields):
         row = {"time": datetime.datetime.now().astimezone().isoformat(), "kind": kind, **fields}
@@ -366,7 +380,7 @@ class Session:
                 self.callback(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
 
-    def fail(self, reason, recoverable=False):
+    def fail(self, reason, recoverable=False, diagnostic=None):
         # Close first. Only transient faults may retry the approved baseline.
         self.gate.trip(reason)
         self.auto_retry = recoverable and not self.approval_required and not self.stop.is_set()
@@ -374,7 +388,8 @@ class Session:
         if not self.failed:
             self.failed = True
             active = self.child is not None and self.child.poll() is None
-            self.emit("BLOCKED" if active else "CHECK_FAILED", message=reason)
+            self.emit("BLOCKED" if active else "CHECK_FAILED", message=reason,
+                      **({'diagnostic':diagnostic} if diagnostic else {}))
 
     def open_log(self):
         os.umask(0o077)
@@ -384,7 +399,7 @@ class Session:
 
     def start(self, create_gateway=True):
         self.open_log()
-        check_controller(self.settings)
+        self.check_config()
         node = selected_node(self.settings)
         self.temp = tempfile.TemporaryDirectory(prefix="claude-guard-")
         temp = Path(self.temp.name)
@@ -423,7 +438,7 @@ class Session:
             threading.Thread(target=self.proxy.serve_forever, daemon=True).start()
         # The UI/app cannot use this path until both checks have passed.
         self.check_egress()
-        check_controller(self.settings)
+        self.check_config()
         self.gate.open()
         self.emit("PREFLIGHT_OK", ip=self.settings["expected_ip"], country=self.settings["expected_country"])
 
@@ -459,7 +474,7 @@ class Session:
                     try:self.clock_skew=email.utils.parsedate_to_datetime(date).timestamp()-(sent_at+time.time())/2
                     except (ValueError, TypeError, OverflowError):pass
                 if response.status != 200:
-                    raise ConnectivityError("出口探测服务未返回有效结果")
+                    raise ConnectivityError("出口检查服务返回 HTTP " + str(response.status) + "。")
                 data = response.read(16384).decode("ascii")
                 trace = dict(line.split("=", 1) for line in data.splitlines() if "=" in line)
                 try:
@@ -487,7 +502,7 @@ class Session:
     def reputation_json(self,host,path):
         if host not in {source['host'] for source in ip_reputation.SOURCES}:raise GuardError('未知检查来源')
         if self.stop.is_set() or self.core is None or self.core.poll() is not None:raise GuardError('检查出口不可用')
-        check_controller(self.settings)
+        self.check_config()
         conn=http.client.HTTPSConnection('127.0.0.1',self.core_port,timeout=5,context=ssl.create_default_context())
         conn.set_tunnel(host,443,{'Proxy-Authorization':'Basic '+self.auth})
         deadline=time.monotonic()+6
@@ -523,10 +538,10 @@ class Session:
             ip_reputation.public_ip(candidate['ip'])
             if candidate['country']!=self.settings['expected_country']:raise ApprovalRequired('出口地区不同，请从设置重新配置。')
             if self.core is None or self.core.poll() is not None:raise GuardError('专用出口已停止，请重新检查。')
-            check_controller(self.settings);selected_node(self.settings)
+            self.check_config();selected_node(self.settings)
             if enhanced(self.settings):self.filter_pid=system_filter.inspect(self.settings,getattr(self,'filter_pid',None))
             self.check_egress(expected_ip=candidate['ip'])
-            check_controller(self.settings);selected_node(self.settings)
+            self.check_config();selected_node(self.settings)
             if enhanced(self.settings):system_filter.inspect(self.settings,self.filter_pid)
             previous=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGUSR1,signal.SIGUSR2,signal.SIGTERM,signal.SIGINT})
             try:
@@ -634,6 +649,7 @@ class Session:
             return
         revision = self.gate.checkpoint()
         self.emit('RESUMING', message='正在重新检查连接，检查完成前保持暂停。', automatic=automatic)
+        stage='connection'
         try:
             if self.approval_required:
                 raise ApprovalRequired('出口或节点曾发生变化，请退出 Claude，重新核验并批准后再启动。')
@@ -641,12 +657,16 @@ class Session:
                 raise GuardError('Claude 已退出，请重新启动。')
             if self.core is None or self.core.poll() is not None:
                 raise GuardError('连接服务已停止，请退出 Claude 后重新启动。')
-            check_controller(self.settings)
+            stage='controller';self.check_config()
+            stage='node'
             selected_node(self.settings)
             if enhanced(self.settings):
+                stage='filter'
                 system_filter.inspect(self.settings, self.filter_pid)
+            stage='egress'
             self.check_egress()
-            check_controller(self.settings)
+            stage='controller'
+            self.check_config()
             if self.stop.is_set():
                 raise GuardError('连接恢复已取消。')
             self.gate.reopen(revision)
@@ -663,9 +683,10 @@ class Session:
                 self.approval_required = True
             self.auto_retry = self.auto_retry and transient_error(exc) and not self.approval_required and not self.stop.is_set()
             self.next_retry = time.monotonic() + 5
-            reason = str(exc) if isinstance(exc, (GuardError, system_filter.FilterError)) else 'VPN 连接复查未完成，请确认网络稳定后重试。'
+            diagnostic=failure_diagnostic(exc,stage)
+            reason = str(exc) if isinstance(exc, (GuardError, system_filter.FilterError)) else diagnostic['summary']
             self.emit('RESUME_FAILED', message=reason, error_type=type(exc).__name__, automatic=automatic,
-                      retrying=self.auto_retry)
+                      retrying=self.auto_retry,diagnostic=diagnostic)
 
     def watch(self, network_event=None):
         last_probe = time.monotonic()
@@ -678,6 +699,7 @@ class Session:
                     return
                 self.emit("IDLE", message="Claude 已退出，停止网络探测")
                 return
+            stage='connection'
             try:
                 ui_pid = os.environ.get("CLAUDE_GUARD_UI_PID")
                 if ui_pid:
@@ -712,8 +734,9 @@ class Session:
                 if self.core.poll() is not None:
                     raise GuardError("专用出口进程停止")
                 if self.reputation:self.reputation.request(self.settings['expected_ip'])
-                check_controller(self.settings)
+                stage='controller';self.check_config()
                 if hasattr(self, 'filter_pid'):
+                    stage='filter'
                     system_filter.inspect(self.settings, self.filter_pid)
                 changed = bool(network_event and network_event.is_set())
                 if changed:
@@ -721,20 +744,22 @@ class Session:
                     # Close existing streams before revalidating a network change.
                     # Retry after a delay, with the gate closed through all checks.
                     reason = '电脑睡眠或唤醒' if '睡眠' in self.gate.reason else '系统网络发生切换'
-                    raise NetworkChanged(reason + '，连接已暂停；网络恢复并通过复查后将自动恢复。')
+                    stage='route'
+                    raise NetworkChanged(reason)
                 if time.monotonic() - last_probe >= self.settings.get("probe_interval_seconds", 5):
+                    stage='node'
                     selected_node(self.settings)
+                    stage='egress'
                     self.check_egress()
                     last_probe = time.monotonic()
             except Exception as exc:
-                self.emit('HEALTH_FAILED', error_type=type(exc).__name__)
+                diagnostic=failure_diagnostic(exc,stage)
+                self.emit('HEALTH_FAILED', error_type=type(exc).__name__,diagnostic=diagnostic)
                 if isinstance(exc, ApprovalRequired):
                     self.approval_required = True
                 recoverable = transient_error(exc)
-                reason = str(exc) if isinstance(exc, GuardError) else '网络检查失败或超时，连接已暂停。'
-                if recoverable and not isinstance(exc, NetworkChanged):
-                    reason += ' 网络恢复并通过复查后将自动恢复。'
-                self.fail(reason, recoverable=recoverable)
+                reason = str(exc) if isinstance(exc,(GuardError,system_filter.FilterError)) else diagnostic['summary']
+                self.fail(reason, recoverable=recoverable,diagnostic=diagnostic)
 
     def close(self):
         if self.reputation:self.reputation.close()
@@ -830,12 +855,9 @@ def main():
         frames=[{"file":Path(frame.filename).name,"line":frame.lineno,"function":frame.name}
                 for frame in traceback.extract_tb(exc.__traceback__)]
         session.emit("CHECK_ERROR", error_type=type(exc).__name__, frames=frames)
-        if isinstance(exc, GuardError):reason=str(exc)
-        elif isinstance(exc, TimeoutError):reason="VPN 连接检查超时，请确认节点可用后重新检查。"
-        elif isinstance(exc, (OSError, http.client.HTTPException)):
-            reason="VPN 连接检查未完成，请检查当前节点后重试。"
-        else:reason="连接检查遇到错误，请从菜单查看日志后重试。"
-        session.fail(reason)
+        diagnostic=failure_diagnostic(exc,'startup')
+        reason=str(exc) if isinstance(exc,(GuardError,system_filter.FilterError)) else diagnostic['summary']
+        session.fail(reason,diagnostic=diagnostic)
         return 1
     finally:
         try:

@@ -174,11 +174,11 @@ class StateTests(unittest.TestCase):
         with mock.patch.object(guard, "controller", side_effect=[config, {"proxies": {"AI": {"now": selection}}}]):
             return guard.check_controller(self.settings)
 
-    def test_good_state_and_bad_tun_mode_node(self):
+    def test_good_state_and_bad_mode_node(self):
         good = {"mode": "rule", "tun": {"enable": True}, "mixed-port": 7897}
         self.assertTrue(self.check_with(good, "approved"))
         for config, node in [({**good, "mode": "global"}, "approved"),
-                             ({**good, "tun": {"enable": False}}, "approved"), (good, "other")]:
+                             (good, "other")]:
             with self.assertRaises(guard.GuardError):
                 self.check_with(config, node)
 

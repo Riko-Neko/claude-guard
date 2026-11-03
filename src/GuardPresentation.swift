@@ -1,6 +1,21 @@
 import Foundation
 import CoreGraphics
 
+enum GuardFailureTechnical {
+    static func text(_ detail: [String:Any]) -> String {
+        var identity = [detail["error_type"] as? String ?? ""]
+        if let code = detail["errno"] as? NSNumber { identity.append("errno " + code.stringValue) }
+        if let code = detail["verify_code"] as? NSNumber { identity.append("verify_code " + code.stringValue) }
+        var lines = [identity.filter { !$0.isEmpty }.joined(separator: " · ")]
+        let raw = detail["raw_message"] as? String ?? ""
+        if !raw.isEmpty { lines.append(raw) }
+        for key in ["reason", "source_location", "memory_address", "origin"] {
+            if let value = detail[key] as? String, !value.isEmpty, !raw.contains(value) { lines.append(value) }
+        }
+        return lines.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+}
+
 // Presentation only: never changes proxy policy or approves a new exit.
 struct GuardConnectionPresentation {
     var statusKey = "idle"

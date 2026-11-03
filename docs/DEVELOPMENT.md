@@ -24,7 +24,7 @@
 python3 build.py
 ```
 
-產生 `dist/ClaudeGuard-0.11.1.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
+產生 `dist/ClaudeGuard-0.12.0.pkg` 與相容舊入口的 `ClaudeGuard-runtime.zip`。只有 `.pkg` 作為正式使用者下載入口。建置包含 Swift 編譯與 ad-hoc strict/deep 簽章驗證，不需要或呼叫登入中的 Claude。尚未提供 Apple Developer ID 簽章及公證。
 
 ## 自動測試
 
@@ -50,7 +50,13 @@ node tests/test_ip_risk_ui.js
 
 `src/ip_reputation.py` 只處理正規化、快取及並行更新，傳輸由 Session 注入，所有 HTTPS 查詢固定經私有核心與已選節點，沒有直連降級。來源結果以 `IP_REPUTATION` 事件增量送往介面，舊 IP 的遲到結果不更新目前畫面。
 
-介面透過私有 stdin 管道送出 `approve_ip`（IP 與隨機 proposal_id）或 `risk_refresh`。人工批准再次檢查出口、國家、節點、TUN 及增強過濾狀態，通過後原子寫入新基準，閘門版本必須仍一致。來源風險評分不參與放行決策；純檢查會話不會啟動 Claude。相關測試使用替身、暫存設定與假來源，完整來源限制見 [IP_REPUTATION.md](IP_REPUTATION.md)。
+介面透過私有 stdin 管道送出 `approve_ip`（IP 與隨機 proposal_id）或 `risk_refresh`。人工批准再次檢查出口、國家、節點、TUN 及增強過濾狀態，通過後原子寫入新基準，閘門版本必須仍一致。來源風險評分不參與放行決策；純檢查會話不會啟動 Claude。`tools/network_status.py` 只讀取本機 Clash 控制器與 macOS 代理設定，開啟選單時更新；執行中的 Session 沿用既有配置輪詢發布 `NETWORK_MODE`。TUN 狀態本身僅提示，不改變閘門，首次設定的系統代理明確確認由 DiscoverySession 保留。相關測試使用替身、暫存設定與假來源，完整來源限制見 [IP_REPUTATION.md](IP_REPUTATION.md)。
+
+## 錯誤詳情與提示卡片
+
+`src/diagnostics.py` 將例外正規化為階段、原始類型、errno、TLS reason、驗證代碼及原始位置等可用欄位，經 `BLOCKED`／`CHECK_FAILED`／`RESUME_FAILED` 的 `diagnostic` 傳給介面。只呈現實際可取得的位址，不推測記憶體資訊；敏感授權資訊先遮罩，命令逾時不輸出完整命令參數。
+
+原生提示依文字測量設定內容高度，保留非激活與恢復後 1 秒收起行為。`prepareCriticalAlert` 可在隔離程序中只建構／量測視圖，不顯示視窗或啟動帳號程式。
 
 ## 發行
 

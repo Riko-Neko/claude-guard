@@ -47,6 +47,10 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     private var criticalPanel: NSPanel?
     private var criticalTitle: NSTextField?
     private var criticalBody: NSTextField?
+    private var criticalTechnical: NSTextField?
+    private var criticalIcon: NSImageView?
+    private var criticalButtons: NSStackView?
+    private var criticalHeights: [ObjectIdentifier:NSLayoutConstraint] = [:]
     private var criticalRisk: NSTextField?
     private var criticalApprove: NSButton?
     private var criticalReview: NSButton?
@@ -63,6 +67,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         } }
     }
     var visible: Bool { window?.isVisible == true }
+    var menuVisible: Bool { popover.isShown }
 
     override init() {
         super.init()
@@ -70,7 +75,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
            let data = try? Data(contentsOf: url),
            let tables = try? JSONDecoder().decode([String: [String: String]].self, from: data) { self.tables = tables }
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 350, height: 365)
+        popover.contentSize = NSSize(width: 400, height: 780)
     }
     func tr(_ text: String) -> String {
         if let translated = tables[language]?[text] { return translated }
@@ -127,61 +132,114 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     }
     func closeMenu() { popover.close() }
 
-    func showCriticalAlert(title: String, body: String) {
+    func showCriticalAlert(title: String, body: String, diagnostic: [String:Any]? = nil) {
+        prepareCriticalAlert(title: title, body: body, diagnostic: diagnostic)
+        criticalPanel?.orderFrontRegardless()
+    }
+    func prepareCriticalAlert(title: String, body: String, diagnostic: [String:Any]? = nil) {
         criticalTimer?.invalidate(); criticalTimer = nil
         notice.show()
+        let accent = NSColor(calibratedRed: 0.73, green: 0.38, blue: 0.27, alpha: 1)
         if criticalPanel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
-                                styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
-            panel.title = "Claude Guard"
-            panel.isReleasedWhenClosed = false
-            panel.level = .floating
-            panel.hidesOnDeactivate = false
-            panel.becomesKeyOnlyIfNeeded = true
-            panel.delegate = self
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160),
+                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.isReleasedWhenClosed = false; panel.hasShadow = true
+            panel.isOpaque = false; panel.backgroundColor = .clear
+            panel.level = .floating; panel.hidesOnDeactivate = false
+            panel.becomesKeyOnlyIfNeeded = true; panel.delegate = self
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            let surface = NSVisualEffectView()
+            surface.material = .popover; surface.blendingMode = .behindWindow; surface.state = .active
+            surface.wantsLayer = true; surface.layer?.cornerRadius = 15
+            surface.layer?.borderWidth = 1; surface.layer?.borderColor = NSColor.separatorColor.cgColor
+            panel.contentView = surface
+            let icon = NSImageView(image: NSImage(systemSymbolName: "exclamationmark.shield.fill", accessibilityDescription: nil)!)
+            icon.contentTintColor = accent
             let heading = NSTextField(wrappingLabelWithString: "")
-            heading.font = .boldSystemFont(ofSize: 15)
-            heading.textColor = NSColor(calibratedRed: 0.72, green: 0.38, blue: 0.27, alpha: 1)
+            heading.font = .systemFont(ofSize: 17, weight: .semibold); heading.textColor = accent
+            let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: tr("acknowledgeAlert"))!, target: self, action: #selector(dismissCriticalAlert))
+            close.isBordered = false; close.contentTintColor = .secondaryLabelColor
+            close.toolTip = tr("acknowledgeAlert")
+            let header = NSStackView(views: [icon, heading, close])
+            header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 9
             let details = NSTextField(wrappingLabelWithString: "")
-            details.font = .systemFont(ofSize: 12)
-            details.isSelectable = true
-            let review = NSButton(title: tr("reviewConnection"), target: self, action: #selector(reviewCriticalAlert))
-            review.bezelStyle = .rounded
+            details.font = .systemFont(ofSize: 14); details.isSelectable = true
+            let technical = NSTextField(wrappingLabelWithString: "")
+            technical.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            technical.textColor = .secondaryLabelColor; technical.isSelectable = true
             let risk = NSTextField(wrappingLabelWithString: "")
-            risk.font = .systemFont(ofSize: 12)
+            risk.font = .systemFont(ofSize: 13)
+            let review = NSButton(title: tr("reviewConnection"), target: self, action: #selector(reviewCriticalAlert))
             let approve = NSButton(title: tr("approveExitAction"), target: self, action: #selector(approveCriticalExit))
-            approve.bezelStyle = .rounded
             let dismiss = NSButton(title: tr("acknowledgeAlert"), target: self, action: #selector(dismissCriticalAlert))
-            dismiss.bezelStyle = .rounded
+            for button in [dismiss, review, approve] {
+                button.bezelStyle = .rounded; button.controlSize = .regular
+                button.font = .systemFont(ofSize: 13, weight: .medium)
+            }
+            approve.bezelColor = accent; approve.contentTintColor = .white
             let buttons = NSStackView(views: [dismiss, review, approve])
-            for button in [dismiss, review, approve] { button.controlSize = .small; button.font = .systemFont(ofSize: 12) }
-            buttons.orientation = .horizontal; buttons.alignment = .centerY; buttons.spacing = 8
-            let stack = NSStackView(views: [heading, details, risk, buttons])
-            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
+            buttons.orientation = .horizontal; buttons.alignment = .centerY
+            buttons.distribution = .fillEqually; buttons.spacing = 8
+            let stack = NSStackView(views: [header, details, technical, risk, buttons])
+            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
             stack.translatesAutoresizingMaskIntoConstraints = false
-            let view = panel.contentView!
-            view.addSubview(stack)
+            surface.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-                stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-                stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-                stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -16),
-                heading.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 14),
+                stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -14),
+                stack.topAnchor.constraint(equalTo: surface.topAnchor, constant: 14),
+                stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -14),
+                header.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                heading.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -61),
+                icon.widthAnchor.constraint(equalToConstant: 23), icon.heightAnchor.constraint(equalToConstant: 24),
+                close.widthAnchor.constraint(equalToConstant: 20), close.heightAnchor.constraint(equalToConstant: 20),
                 details.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                risk.widthAnchor.constraint(equalTo: stack.widthAnchor)
+                technical.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                risk.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                buttons.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.heightAnchor.constraint(equalToConstant: 30)
             ])
+            for field in [heading, details, technical, risk] {
+                let height = field.heightAnchor.constraint(equalToConstant: 20)
+                height.isActive = true; criticalHeights[ObjectIdentifier(field)] = height
+            }
             criticalPanel = panel; criticalTitle = heading; criticalBody = details
+            criticalTechnical = technical; criticalIcon = icon; criticalButtons = buttons
             criticalRisk = risk; criticalApprove = approve; criticalReview = review
         }
-        criticalTitle?.stringValue = title
-        criticalTitle?.textColor = NSColor(calibratedRed: 0.72, green: 0.38, blue: 0.27, alpha: 1)
+        criticalTitle?.stringValue = title; criticalTitle?.textColor = accent
+        criticalIcon?.image = NSImage(systemSymbolName: "exclamationmark.shield.fill", accessibilityDescription: nil)
+        criticalIcon?.contentTintColor = accent
         criticalBody?.stringValue = body
+        let stage = diagnostic?["stage"] as? String
+        let technical = diagnostic.map(GuardFailureTechnical.text) ?? ""
+        criticalTechnical?.stringValue = technical.isEmpty ? "" : (stage.map { tr("failureStage_" + $0) + "\n" } ?? "") + technical
         refreshCriticalDetails()
+    }
+    func updateCriticalFailure(body: String, diagnostic: [String:Any]?) {
+        guard criticalPanel?.isVisible == true, !notice.recovered else { return }
+        criticalBody?.stringValue = body
+        let technical = diagnostic.map(GuardFailureTechnical.text) ?? ""
+        let stage = diagnostic?["stage"] as? String
+        criticalTechnical?.stringValue = technical.isEmpty ? "" : (stage.map { tr("failureStage_" + $0) + "\n" } ?? "") + technical
+        refreshCriticalDetails()
+    }
+    private func fitCriticalContent() {
+        guard let panel = criticalPanel, let title = criticalTitle, let body = criticalBody,
+              let technical = criticalTechnical, let risk = criticalRisk else { return }
+        var heights: [CGFloat] = []
+        for (field, width) in [(title, CGFloat(311)), (body, 372), (technical, 372), (risk, 372)] {
+            let rect = (field.stringValue as NSString).boundingRect(with: NSSize(width: width, height: 10000),
+                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: field.font ?? NSFont.systemFont(ofSize: 14)])
+            let height = max(18, ceil(rect.height) + 2)
+            criticalHeights[ObjectIdentifier(field)]?.constant = height
+            if field === title { heights.append(max(24, height)) }
+            else if !field.isHidden { heights.append(height) }
+        }
+        if criticalButtons?.isHidden == false { heights.append(30) }
+        let height = heights.reduce(0, +) + CGFloat(max(0, heights.count - 1)) * 10 + 28
+        panel.setContentSize(NSSize(width: 400, height: height))
+        panel.contentView?.layoutSubtreeIfNeeded()
         positionCriticalAlert()
-        // A nonactivating menu-bar notice must not steal focus or raise the
-        // configuration window while the user is working in another app.
-        criticalPanel?.orderFrontRegardless()
     }
     private func positionCriticalAlert() {
         guard let panel = criticalPanel else { return }
@@ -199,6 +257,10 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         criticalTitle?.stringValue = title
         criticalTitle?.textColor = .systemGreen
         criticalBody?.stringValue = body
+        criticalTechnical?.stringValue = ""
+        criticalIcon?.image = NSImage(systemSymbolName: "checkmark.shield.fill", accessibilityDescription: nil)
+        criticalIcon?.contentTintColor = .systemGreen
+        refreshCriticalDetails()
         let timer = Timer(timeInterval: 1, repeats: false) { [weak self] _ in
             guard let self = self, self.notice.expire(token) else { return }
             self.criticalPanel?.close()
@@ -217,18 +279,21 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     @objc private func reviewCriticalAlert() {
         criticalPanel?.close()
         let value = (currentState()["state"] as? [String:Any]) ?? [:]
-        onAction?(["action": value["approvalRequired"] as? Bool == true ? "riskDetails" : "settings"])
+        onAction?(["action": value["approvalRequired"] as? Bool == true ? "riskDetails" : (criticalTechnical?.stringValue.isEmpty == false ? "logs" : "settings")])
     }
     @objc private func approveCriticalExit() { onAction?(["action":"approveIP"]) }
     func refreshCriticalDetails() {
-        guard let panel = criticalPanel else { return }
+        guard criticalPanel != nil else { return }
         let state = (currentState()["state"] as? [String:Any]) ?? [:]
-        let pending = state["approvalRequired"] as? Bool == true
+        let pending = state["approvalRequired"] as? Bool == true && !notice.recovered
+        criticalButtons?.isHidden = notice.recovered
+        criticalTechnical?.isHidden = notice.recovered || criticalTechnical?.stringValue.isEmpty != false
+        criticalBody?.isHidden = criticalBody?.stringValue.isEmpty == true
         criticalRisk?.isHidden = !pending
         criticalApprove?.isHidden = !pending
         criticalApprove?.isEnabled = state["canApproveExit"] as? Bool == true
         criticalApprove?.title = tr(state["approvalSending"] as? Bool == true ? "confirmingExit" : "approveExitAction")
-        criticalReview?.title = tr(pending ? "riskSources" : "reviewConnection")
+        criticalReview?.title = tr(pending ? "riskSources" : (criticalTechnical?.stringValue.isEmpty == false ? "viewErrorLog" : "reviewConnection"))
         if pending {
             let report = state["reputation"] as? [String:Any]
             let fresh = !GuardReportFreshness.stale(time: report?["checked_at"] as? String ?? "", invalidatedAt: "", maxAge: 3600)
@@ -242,8 +307,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
                 criticalRisk?.textColor = .secondaryLabelColor
             }
         }
-        panel.setContentSize(NSSize(width:360,height:pending ? 310 : 240))
-        positionCriticalAlert()
+        fitCriticalContent()
     }
     func clearCriticalAlert() {
         criticalTimer?.invalidate(); criticalTimer = nil
@@ -260,7 +324,8 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     }
     func refreshMenu() {
         let value = currentState()
-        popover.contentSize = NSSize(width: 350, height: 540)
+        let available = noticeAnchor?.window?.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 800
+        popover.contentSize = NSSize(width: 400, height: min(780, available - 70))
         send(value, to: menuWeb)
         if settingsReady { send(value, to: settingsWeb) }
     }

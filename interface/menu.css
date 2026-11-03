@@ -1,0 +1,83 @@
+/* Menu layout: readable status, a scrollable review area and fixed actions. */
+.popover {
+  width: 100%; height: 100vh; max-height: none; overflow: hidden;
+  display: flex; flex-direction: column; gap: 8px; padding: 14px;
+  font-size: 14px; line-height: 1.45;
+}
+.popover > * { flex-shrink: 0; min-width: 0; }
+.popover .top { padding: 0; margin: 0; min-height: 34px; }
+.popover .brand { gap: 9px; }
+.popover .brand strong { font-size: 19px; }
+.popover .shield { width: 29px; height: 33px; }
+.popover .lang { font-size: 12px; padding: 5px 7px; max-width: 106px; }
+.ip-hero {
+  padding: 11px 14px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.ip-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.ip-heading > span:first-child { font-size: 13px; font-weight: 550; color: var(--muted); }
+.connection-pill { padding: 3px 9px; border-radius: 16px; font-size: 12px; font-weight: 600; }
+.connection-pill.neutral { color: var(--muted); background: var(--bg); }
+.connection-pill.live { color: var(--sage); background: var(--sage-soft); }
+.connection-pill.attention { color: var(--warning); background: var(--warning-bg); }
+.exit-value { font-size: 28px; font-weight: 700; letter-spacing: -.7px; line-height: 1.25; margin: 6px 0; overflow-wrap: anywhere; }
+.exit-value.ipv6 { font-size: 20px; letter-spacing: -.3px; }
+.ip-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.region-chip { padding: 2px 6px; background: var(--accent-soft); color: var(--accent); border-radius: 5px; font-weight: 650; }
+.ip-recheck { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 2px 0 2px 6px; font-size: 12px; }
+.action-icon { width: 17px; height: 17px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.menu-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+.menu-scroll > * { flex-shrink: 0; }
+.popover .connection-notice { margin: 0; padding: 12px; max-height: 160px; font-size: 13px; }
+.popover .connection-notice p { font-size: 13px; }
+.network-mode { --mode-color: #82939b; padding: 11px 13px; background: var(--card); border: 1px solid var(--line); border-radius: 13px; }
+.mode-tun { --mode-color: #6c9b74; }
+.mode-proxy { --mode-color: #d7a14b; }
+.mode-status-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.mode-status-line > span { color: var(--muted); font-weight: 600; }
+.mode-proxy .mode-status-line > span { color: var(--warning); }
+.mode-tun .mode-status-line > span { color: var(--sage); }
+.mode-state-bar { margin-top: 8px; height: 4px; border-radius: 3px; background: var(--mode-color); }
+.network-mode p { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 7px; }
+.menu-risk-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px; }
+.popover .risk-block { margin: 0; padding: 0; border: 0; }
+.popover .risk-heading { font-size: 14px; gap: 7px; grid-template-columns: minmax(0, 1fr) auto auto auto; }
+.popover .risk-heading strong { font-weight: 650; }
+.popover .risk-score { padding: 3px 9px; font-size: 15px; }
+.popover .risk-info-toggle { width: 20px; height: 20px; font-size: 13px; }
+.popover .risk-scale { margin-top: 11px; }
+.popover .risk-track { height: 9px; }
+.popover .risk-legend { font-size: 11px; margin-top: 5px; }
+.popover .risk-info-body { font-size: 13px; padding: 10px; }
+.popover .subtle { font-size: 12px; text-align: left; line-height: 1.5; margin-top: 7px; overflow-wrap: anywhere; }
+.popover .risk-block details { font-size: 13px; margin: 9px 0; }
+.popover .risk-block details > summary { padding: 3px 0; font-weight: 550; }
+.popover .risk-source { font-size: 13px; }
+.risk-source-note { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.popover .small { font-size: 13px; padding: 5px 7px; }
+.popover .risk-block > .env-row { margin-top: 4px; }
+.checks-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
+.checks-heading strong { font-size: 14px; font-weight: 650; }
+.checks-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.local-check { --check-color: #82939b; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 10px; text-align: left; background: var(--card); border-radius: 12px; min-width: 0; }
+.check-observed { --check-color: #6c9b74; }
+.check-warning { --check-color: #d7a14b; }
+.check-unverified { --check-color: #829cac; }
+.check-unknown { --check-color: #80887d; }
+.check-name { font-size: 14px; font-weight: 600; }
+.check-state { font-size: 12px; color: var(--muted); }
+.check-warning .check-state { color: var(--warning); }
+.check-color-bar { display: block; height: 4px; margin-top: 3px; border-radius: 3px; background: var(--check-color); }
+.menu-actions { padding-top: 2px; }
+.popover .menu-primary { width: 100%; min-height: 44px; padding: 10px 14px; margin: 0 0 8px; font-size: 15px; font-weight: 650; }
+.popover .menu-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.popover .menu-grid button { display: flex; justify-content: center; align-items: center; gap: 5px; padding: 9px 6px; font-size: 14px; min-height: 42px; min-width: 0; overflow-wrap: anywhere; text-align: center; }
+.popover .menu-foot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; border-top: 1px solid var(--line); padding-top: 10px; margin: 0; }
+.popover .menu-foot button { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 13px; padding: 6px 2px; min-height: 32px; min-width: 0; white-space: nowrap; }
+.popover .menu-foot .action-icon { width: 14px; height: 14px; }
+.popover .menu-foot [data-action="uninstall"] { color: var(--danger); }
+.menu-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.popover .risk-refresh{display:grid;place-items:center;padding:4px;width:26px;height:26px;border-radius:8px}.popover .risk-refresh .action-icon{width:17px;height:17px}
+
+.risk-summary-meta{font-size:12px;font-weight:400;color:var(--muted)}

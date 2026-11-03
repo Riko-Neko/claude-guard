@@ -21,6 +21,21 @@ def command(args):
     return result.stdout.strip()
 
 
+def system_proxy_enabled(text):
+    flags=re.findall(r'\b(?:HTTPEnable|HTTPSEnable|SOCKSEnable)\s*:\s*([01])\b',text)
+    if flags:return '1' in flags
+    return False if '<dictionary>' in text else None
+
+
+def network_mode(config,system_proxy=None):
+    tun=config.get('tun',{}) if isinstance(config,dict) else {}
+    enabled=tun.get('enable') if isinstance(tun,dict) else None
+    if type(enabled) is not bool:enabled=None
+    mode='tun' if enabled is True else ('system_proxy' if system_proxy is True else 'proxy') if enabled is False else 'unknown'
+    return dict(mode=mode,tun=enabled,system_proxy=system_proxy,
+                checked_at=datetime.datetime.now().astimezone().isoformat())
+
+
 def snapshot(claude_app):
     result = {'os': platform.mac_ver()[0], 'architecture': platform.machine(),
               'timezone': 'unknown', 'utc_offset_minutes': int(datetime.datetime.now().astimezone().utcoffset().total_seconds()/60),
@@ -44,9 +59,9 @@ def snapshot(claude_app):
 
 def evaluate(settings, current, controller_config, clock_skew=None, connections=0):
     baseline = settings.get('environment_baseline', {})
-    tun = bool(controller_config.get('tun', {}).get('enable'))
-    checks = [dict(id='route', status='observed' if tun else 'warning',
-                   message='Clash 报告 TUN 已开启；受控代理出口另行验证。' if tun else '当前未开启 TUN，只有受控代理连接可由 Guard 控制。')]
+    tun = network_mode(controller_config)['tun']
+    checks = [dict(id='route', status='observed' if tun is True else 'warning' if tun is False else 'unverified',
+                   message='Clash 报告 TUN 已开启；受控代理出口另行验证。' if tun is True else '当前未开启 TUN，建议在 VPN 中开启；此变化只提醒，不因此阻断受控连接。' if tun is False else '当前网络模式未能确认，请稍后重新检查。')]
     dns = current.get('dns_resolvers')
     old_dns = baseline.get('dns_resolvers')
     dns_changed = old_dns is not None and dns is not None and dns != old_dns

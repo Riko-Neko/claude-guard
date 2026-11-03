@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var approvalSending = false
     var reputationReport: [String: Any]?
     var reputationOption = true
+    var networkModeReport: [String: Any] = [:]
+    var networkModeProcess: Process?
+    var networkModeGeneration = 0
     var pendingSetupMode: String?
     var approvedPID: Int32?
     var blocked = false
@@ -172,11 +175,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return false
     }
 
-    func notify(_ title: String, _ body: String, alarm: Bool = false) {
+    func notify(_ title: String, _ body: String, alarm: Bool = false, diagnostic: [String:Any]? = nil) {
         let center = UNUserNotificationCenter.current()
         let heading = interface.tr(title), detail = interface.tr(body)
         GuardNoticeDelivery.send(alarm: alarm, deliverSystem: !alarm, showInApp: { [weak self] in
-            DispatchQueue.main.async { self?.interface.showCriticalAlert(title: heading, body: detail) }
+            DispatchQueue.main.async { self?.interface.showCriticalAlert(title: heading, body: detail, diagnostic: diagnostic) }
         }, authorize: { reply in
             center.requestAuthorization(options: [.alert, .sound], completionHandler: reply)
         }, post: { reply in
@@ -217,14 +220,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func togglePanel() {
         guard let button = item.button else { return }
+        if !interface.menuVisible { refreshNetworkMode() }
         interface.toggleMenu(relativeTo: button)
+    }
+
+    func refreshNetworkMode() {
+        guard networkModeProcess == nil else { return }
+        let process = Process(), output = Pipe()
+        process.executableURL = pythonExecutable
+        process.arguments = [root.appendingPathComponent("tools/network_status.py").path]
+        process.environment = GuardChildEnvironment.make(ProcessInfo.processInfo.environment, language: interface.language)
+        process.standardOutput = output; process.standardError = FileHandle.nullDevice
+        networkModeGeneration += 1
+        let generation = networkModeGeneration
+        networkModeProcess = process
+        process.terminationHandler = { [weak self] process in
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            DispatchQueue.main.async {
+                guard let self = self, self.networkModeProcess === process else { return }
+                self.networkModeProcess = nil
+                guard self.networkModeGeneration == generation else { return }
+                self.networkModeReport = (try? JSONSerialization.jsonObject(with: data)) as? [String:Any] ?? [:]
+                self.interface.refreshMenu()
+            }
+        }
+        do { try process.run() }
+        catch { networkModeProcess = nil; networkModeReport = [:]; interface.refreshMenu() }
     }
 
     func interfaceState() -> [String: Any] {
         let status = resuming ? "checkBusy" : (setupProcess != nil ? "busy" : connection.statusKey)
         let settings = ((try? Data(contentsOf: root.appendingPathComponent("settings.json")))
             .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
-        return ["mode": configuredProtection(), "interval": environmentInterval, "configured": protectedLaunchAllowed(),
+        let interval = setupProcess != nil ? environmentInterval : (settings["environment_check_seconds"] as? Int ?? environmentInterval)
+        return ["mode": configuredProtection(), "interval": interval, "configured": protectedLaunchAllowed(),
                 "ip": latestIP == "未记录" ? "—" : latestIP, "region": latestCountry, "allowed": protectedLaunchAllowed(),
                 "approvedIP": settings["configured"] as? Bool == true ? (settings["expected_ip"] as? String ?? "—") : "—",
                 "observedAt": connection.observedAt,
@@ -235,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "approvalSending": approvalSending,
                 "reputationEnabled": settings["ip_reputation_enabled"] as? Bool ?? true,
                 "reputation": reputationSnapshot(),
+                "networkMode": networkModeReport, "localChecks": environmentCheckRows(),
                 "connectionTitle": interface.tr(connection.titleKey), "connectionReason": connection.hasFailure ? interface.tr(connection.reason) : "",
                 "active": backend != nil, "paused": backend != nil && blocked,
                 "busy": setupProcess != nil || resuming,
@@ -481,6 +511,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   let kind = row["kind"] as? String else { continue }
             connection.receive(row)
             switch kind {
+            case "NETWORK_MODE":
+                if let report = row["report"] as? [String:Any] {
+                    networkModeGeneration += 1; networkModeReport = report
+                    interface.refreshMenu()
+                }
             case "IP_REPUTATION":
                 if let report = row["report"] as? [String:Any], report["ip"] as? String == latestIP {
                     reputationReport = report
@@ -520,14 +555,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 display(retrying ? "等待网络恢复…" : "Claude 连接已暂停", symbol: "exclamationmark.shield.fill")
                 // Automatic transient retries do not repeat the same alarm.
                 if row["automatic"] as? Bool != true || !retrying {
-                    notify("连接尚未恢复", row["message"] as? String ?? "请确认 VPN 连接后重试。", alarm: true)
+                    notify("连接尚未恢复", row["message"] as? String ?? "请确认 VPN 连接后重试。", alarm: true, diagnostic: row["diagnostic"] as? [String:Any])
+                } else {
+                    interface.updateCriticalFailure(body: interface.tr(row["message"] as? String ?? "连接检查未完成"), diagnostic: row["diagnostic"] as? [String:Any])
                 }
             case "BLOCKED":
                 let alreadyBlocked = blocked
                 blocked = true
                 if connection.approvalRequired { break }
                 display("Claude 连接已暂停", symbol: "exclamationmark.shield.fill")
-                if !alreadyBlocked { notify("Claude 连接已暂停", row["message"] as? String ?? "VPN 状态发生变化，Claude 的受保护连接已断开。请退出 Claude、检查 VPN，再从 Guard 菜单重新启动。", alarm: true) }
+                if !alreadyBlocked { notify("Claude 连接已暂停", row["message"] as? String ?? "连接检查未完成", alarm: true, diagnostic: row["diagnostic"] as? [String:Any]) }
             case "IP_CHANGED":
                 blocked = true
                 pendingExitID = row["proposal_id"] as? String ?? ""
@@ -550,7 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     break
                 }
                 display("连接检查未通过", symbol: "exclamationmark.shield.fill")
-                notify("连接检查未通过", row["message"] as? String ?? "本次未启动 Claude。", alarm: true)
+                notify("连接检查未通过", row["message"] as? String ?? "本次未启动 Claude。", alarm: true, diagnostic: row["diagnostic"] as? [String:Any])
             case "CHECK_COMPLETE":
                 blocked = false
                 let recovered = interface.showRecoveredNotice(title: interface.tr("checkPassedNotice"), body: interface.tr("checkPassedNoticeBody"))
@@ -713,7 +750,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc func showHelp() { NSWorkspace.shared.open(root.appendingPathComponent(interface.language == "zh-Hans" ? "README.zh-CN.md" : "README.md")) }
     @objc func showLogs() { NSWorkspace.shared.open(root.appendingPathComponent("runtime")) }
-    @objc func showEnvironment() {
+    func environmentCheckRows() -> [[String:Any]] {
+        let settings = ((try? Data(contentsOf: root.appendingPathComponent("settings.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
+        let seconds = settings["environment_check_seconds"] as? Int ?? environmentInterval
         var checks = [[String: Any]]()
         for name in ["environment-report.json", "leak-report.json"] {
             let url = root.appendingPathComponent("runtime/" + name)
@@ -725,13 +765,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let timestamp = report["time"] as? String ?? ""
                 localized["sourceTime"] = timestamp
                 localized["stale"] = GuardReportFreshness.stale(time: timestamp, invalidatedAt: connection.invalidatedAt,
-                                                               maxAge: TimeInterval(environmentInterval))
+                                                               maxAge: TimeInterval(seconds))
                 if let message = row["message"] as? String { localized["message"] = interface.tr(message) }
                 return localized
             })
         }
+        return checks
+    }
+    @objc func showEnvironment() {
         interface.showSettings()
-        interface.emit(["kind":"report", "checks":checks])
+        interface.emit(["kind":"report", "checks":environmentCheckRows()])
     }
 
     @objc func openLeakWizard() {

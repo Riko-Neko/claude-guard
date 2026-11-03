@@ -46,7 +46,7 @@ class EnvironmentTests(unittest.TestCase):
         settings={'base_proxy_port':7897,'expected_node':'node'}
         data=[{'mode':'rule','tun':{'enable':False},'mixed-port':7897},{'proxies':{'AI':{'now':'node'}}}]
         with mock.patch.object(guard,'controller',side_effect=data):
-            with self.assertRaises(guard.TunRequired):guard.check_controller(settings)
+            with self.assertRaises(guard.TunRequired):guard.check_controller(settings,require_tun=True)
         with mock.patch.object(guard,'controller',side_effect=data):self.assertTrue(guard.check_controller({**settings,'allow_system_proxy':True}))
     def test_environment_warning_leaves_gate_open_and_deduplicates(self):
         session=guard.Session(self.settings);session.gate.open();events=[]

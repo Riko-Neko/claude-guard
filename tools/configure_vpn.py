@@ -48,6 +48,10 @@ def save(result):
     settings.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n');settings.chmod(0o600)
 
 class DiscoverySession(guard.Session):
+    def check_config(self):
+        # First-time setup keeps its explicit system-proxy confirmation.
+        return guard.check_controller(self.settings,require_tun=True)
+
     def check_egress(self):
         import http.client,ssl
         conn=http.client.HTTPSConnection('127.0.0.1',self.core_port,timeout=10,context=ssl.create_default_context())
