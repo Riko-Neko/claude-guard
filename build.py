@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '0.10.16'
+VERSION = '0.10.17'
 DIST = ROOT / 'dist'
 DIST.mkdir(exist_ok=True)
 TOOLS = ['gui_setup.py', 'configure_vpn.py', 'ensure_lulu.py', 'initialize_filter.py', 'recover_lulu_storage.py',
@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix='claude-guard-package-') as directory:
     info = {'CFBundleIdentifier': 'local.rikoneko.claude-guard', 'CFBundleName': 'Claude Guard',
             'CFBundleDisplayName': 'Claude Guard', 'CFBundleExecutable': 'ClaudeGuard',
             'CFBundleIconFile': 'Guard.icns', 'CFBundlePackageType': 'APPL',
-            'CFBundleVersion': '29', 'CFBundleShortVersionString': VERSION,
+            'CFBundleVersion': '30', 'CFBundleShortVersionString': VERSION,
             'LSUIElement': True, 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True}
     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copy2(ROOT / 'src/ClaudeGuard.swift', stage / 'main.swift')

@@ -19,5 +19,6 @@ jobs:
         run: |
           node tests/test_interface_flow.js
           node tests/test_guard_alerts.js
+          node tests/test_setup_selection.js
       - name: Build without installing
         run: python3 build.py
