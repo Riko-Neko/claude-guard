@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.image = NSImage(systemSymbolName:"shield",accessibilityDescription:"Guard Preview")
             item.button?.target = self; item.button?.action = #selector(togglePanel)
+            interface.noticeAnchor = item.button
             interface.state = { [weak self] in ["mode":"proxy", "interval":3600,"ip":"—", "allowed":true,"statusText":self?.interface.tr("idle") ?? "Idle"] }
             interface.onAction = { [weak self] body in
                 guard let self = self, let action = body["action"] as? String else { return }
@@ -144,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         interface.onAction = { [weak self] body in self?.interfaceAction(body) }
         item.button?.target = self
         item.button?.action = #selector(togglePanel)
+        interface.noticeAnchor = item.button
         loadLastCheck()
         refreshAvailability()
         UNUserNotificationCenter.current().delegate = self
@@ -166,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func notify(_ title: String, _ body: String, alarm: Bool = false) {
         let center = UNUserNotificationCenter.current()
         let heading = interface.tr(title), detail = interface.tr(body)
-        GuardNoticeDelivery.send(alarm: alarm, showInApp: { [weak self] in
+        GuardNoticeDelivery.send(alarm: alarm, deliverSystem: !alarm, showInApp: { [weak self] in
             DispatchQueue.main.async { self?.interface.showCriticalAlert(title: heading, body: detail) }
         }, authorize: { reply in
             center.requestAuthorization(options: [.alert, .sound], completionHandler: reply)
@@ -432,17 +434,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 saveCheckSummary(row)
             case "RUNNING":
                 approvedPID = (row["pid"] as? NSNumber)?.int32Value
-                interface.clearCriticalAlert()
+                let recovered = interface.showRecoveredNotice(title: interface.tr("connectionRecovered"), body: interface.tr("connectionRecoveryBody"))
                 display("Claude 连接保护已开启", symbol: "checkmark.shield.fill")
-                notify("连接保护已开启", "连接检查已通过，Claude 正在使用已设置的 VPN。")
+                if !recovered { notify("连接保护已开启", "连接检查已通过，Claude 正在使用已设置的 VPN。") }
             case "RESUMING":
                 resuming = true
                 display("正在重新检查连接…", symbol: "shield.lefthalf.filled")
             case "RESUMED":
                 blocked = false; resuming = false
-                interface.clearCriticalAlert()
+                interface.showRecoveredNotice(title: interface.tr("connectionRecovered"), body: interface.tr("connectionRecoveryBody"))
                 display("Claude 连接保护已开启", symbol: "checkmark.shield.fill")
-                notify("连接已恢复", "连接复查已通过，Claude 连接已恢复。")
             case "RESUME_FAILED":
                 blocked = true; resuming = false
                 if connection.approvalRequired {
@@ -483,10 +484,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 notify("连接检查未通过", row["message"] as? String ?? "本次未启动 Claude。", alarm: true)
             case "CHECK_COMPLETE":
                 blocked = false
-                interface.clearCriticalAlert()
+                let recovered = interface.showRecoveredNotice(title: interface.tr("checkPassedNotice"), body: interface.tr("checkPassedNoticeBody"))
                 saveCheckSummary(row)
                 display(lastCheckText, symbol: "checkmark.shield")
-                notify("网络检查通过", "当前 VPN 与已保存的设置一致。可以从菜单检查并启动 Claude。")
+                if !recovered { notify("网络检查通过", "当前 VPN 与已保存的设置一致。可以从菜单检查并启动 Claude。") }
             case "IDLE":
                 blocked = true
                 display("待机 · Claude 未连接", symbol: "shield")
@@ -618,7 +619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.setupInput = nil
                 if finished.terminationStatus == 0 && self?.protectedLaunchAllowed() == true {
                     self?.loadLastCheck()
-                    self?.interface.clearCriticalAlert()
+                    self?.interface.showRecoveredNotice(title: self?.interface.tr("checkPassedNotice") ?? "", body: self?.interface.tr("checkPassedNoticeBody") ?? "")
                 }
                 self?.interface.emit(["kind":"finished", "success":finished.terminationStatus == 0])
                 self?.refreshAvailability()

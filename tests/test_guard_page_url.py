@@ -32,7 +32,7 @@ precondition(GuardLifecyclePolicy.decision(setup:false,operation:false,backend:f
 precondition(GuardLifecyclePolicy.decision(setup:false,operation:false,backend:true,claude:true)=="claude")
 precondition(GuardLifecyclePolicy.decision(setup:false,operation:true,backend:false,claude:false)=="operation")
 ''')
-            built=subprocess.run(['/usr/bin/xcrun','swiftc','-module-cache-path',str(folder/'ModuleCache'),str(ROOT/'src/GuardInterface.swift'),str(source),'-framework','AppKit','-framework','WebKit','-o',str(folder/'url-test')],capture_output=True,text=True)
+            built=subprocess.run(['/usr/bin/xcrun','swiftc','-module-cache-path',str(folder/'ModuleCache'),str(ROOT/'src/GuardPresentation.swift'),str(ROOT/'src/GuardInterface.swift'),str(source),'-framework','AppKit','-framework','WebKit','-o',str(folder/'url-test')],capture_output=True,text=True)
             self.assertEqual(built.returncode,0,built.stderr)
             result=subprocess.run([str(folder/'url-test')],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)

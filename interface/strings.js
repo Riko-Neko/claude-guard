@@ -199,7 +199,11 @@ window.GUARD_STRINGS = {
     "manualPauseReason": "你已暫停受控連線。請退出 Claude 後重新檢查並啟動。",
     "连接检查未完成，请查看日志后重试。": "連線檢查未完成，請查看日誌後重試。",
     "连接保护后台已结束，请退出 Claude 后重新启动。": "連線保護背景程序已結束，請退出 Claude 後重新啟動。",
-    "连接检查未通过，请查看日志。": "連線檢查未通過，請查看日誌。"
+    "连接检查未通过，请查看日志。": "連線檢查未通過，請查看日誌。",
+    "connectionRecovered": "連線已恢復",
+    "connectionRecoveryBody": "出口與保護檢查已通過，可以繼續使用。",
+    "checkPassedNotice": "連線檢查已通過",
+    "checkPassedNoticeBody": "已確認目前連線與設定一致。"
   },
   "zh-Hans": {
     "configure": "安装与配置",
@@ -392,7 +396,11 @@ window.GUARD_STRINGS = {
     "checkedAt": "检查时间",
     "unknownTime": "时间未记录",
     "reportScope": "以下是历史检查记录，不代表当前连接已通过。请以当前连接状态为准。",
-    "manualPauseReason": "你已暂停受控连接。请退出 Claude 后重新检查并启动。"
+    "manualPauseReason": "你已暂停受控连接。请退出 Claude 后重新检查并启动。",
+    "connectionRecovered": "连接已恢复",
+    "connectionRecoveryBody": "出口与保护检查已通过，可以继续使用。",
+    "checkPassedNotice": "连接检查已通过",
+    "checkPassedNoticeBody": "已确认当前连接与配置一致。"
   },
   "en": {
     "configure": "Install & configure",
@@ -594,6 +602,10 @@ window.GUARD_STRINGS = {
     "manualPauseReason": "You paused the managed connection. Quit Claude, then check and start again.",
     "连接检查未完成，请查看日志后重试。": "The connection check did not complete. Review the logs and retry.",
     "连接保护后台已结束，请退出 Claude 后重新启动。": "The connection service ended. Quit Claude, then start it again through Guard.",
-    "连接检查未通过，请查看日志。": "The connection check failed. Review the logs."
+    "连接检查未通过，请查看日志。": "The connection check failed. Review the logs.",
+    "connectionRecovered": "Connection restored",
+    "connectionRecoveryBody": "Exit and protection checks passed. You can continue working.",
+    "checkPassedNotice": "Connection check passed",
+    "checkPassedNoticeBody": "The current connection matches your settings."
   }
 };

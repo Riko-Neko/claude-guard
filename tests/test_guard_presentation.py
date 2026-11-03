@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class PresentationTests(unittest.TestCase):
     def test_notification_failure_state_and_report_freshness(self):
         script=r'''import Foundation
+import CoreGraphics
 var order:[String]=[];var errors:[[String:Any]]=[]
 GuardNoticeDelivery.send(alarm:true,showInApp:{order.append("visible")},authorize:{reply in
  order.append("authorize");reply(false,NSError(domain:"fixture.notifications",code:1))
@@ -20,6 +21,25 @@ var visible=0
 GuardNoticeDelivery.send(alarm:true,showInApp:{visible+=1},authorize:{$0(true,nil)},post:{$0(NSError(domain:"fixture.delivery",code:99))},record:{errors.append($0)})
 precondition(visible==1 && errors.last?["kind"] as? String == "NOTIFICATION_SEND_FAILED")
 GuardNoticeDelivery.send(alarm:false,showInApp:{preconditionFailure("Routine message opened critical UI")},authorize:{$0(false,nil)},post:{_ in},record:{_ in})
+GuardNoticeDelivery.send(alarm:true,deliverSystem:false,showInApp:{visible+=1},authorize:{_ in preconditionFailure("Menu notice must not request system delivery")},post:{_ in preconditionFailure("Duplicate system banner")},record:{_ in})
+var notice=GuardNoticePresentation()
+notice.show()
+let firstRecovery=notice.recover()!
+precondition(notice.visible && notice.recovered)
+precondition(notice.expire(firstRecovery) && !notice.visible)
+notice.show();notice.dismiss()
+precondition(notice.recover()==nil && !notice.visible)
+notice.show();let oldRecovery=notice.recover()!
+notice.show()
+precondition(!notice.expire(oldRecovery) && notice.visible && !notice.recovered)
+let screen=CGRect(x:0,y:0,width:1000,height:800)
+let origin=GuardNoticePlacement.origin(anchor:CGRect(x:900,y:780,width:24,height:20),visibleFrame:screen,size:CGSize(width:360,height:220))
+precondition(origin==CGPoint(x:564,y:552))
+let fallback=GuardNoticePlacement.origin(anchor:nil,visibleFrame:screen,size:CGSize(width:360,height:220))
+precondition(fallback.x==632 && fallback.y==572)
+let other=CGRect(x:-1000,y:0,width:1000,height:800)
+let clamped=GuardNoticePlacement.origin(anchor:CGRect(x:-5,y:780,width:24,height:20),visibleFrame:other,size:CGSize(width:360,height:220))
+precondition(clamped.x+360<=other.maxX && clamped.x>=other.minX)
 var state=GuardConnectionPresentation()
 state.beginCheck()
 state.receive(["kind":"IP_CHANGED","time":"2026-01-01T10:01:00Z","ip":"192.0.2.2","country":"TW","message":"Fixture changed exit"])

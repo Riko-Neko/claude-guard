@@ -35,7 +35,7 @@ enum GuardLifecyclePolicy {
     }
 }
 
-final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelegate, NSWindowDelegate {
     var onAction: (([String: Any]) -> Void)?
     var state: (() -> [String: Any])?
     private var window: NSWindow?
@@ -47,6 +47,9 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     private var criticalPanel: NSPanel?
     private var criticalTitle: NSTextField?
     private var criticalBody: NSTextField?
+    private var criticalTimer: Timer?
+    private var notice = GuardNoticePresentation()
+    weak var noticeAnchor: NSStatusBarButton?
     private var tables = [String: [String: String]]()
     private var previewLanguage: String? = ProcessInfo.processInfo.arguments.contains("--preview-ui") ? "zh-Hant" : nil
     var language: String {
@@ -122,19 +125,23 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     func closeMenu() { popover.close() }
 
     func showCriticalAlert(title: String, body: String) {
+        criticalTimer?.invalidate(); criticalTimer = nil
+        notice.show()
         if criticalPanel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 260),
-                                styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
+                                styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.title = "Claude Guard"
             panel.isReleasedWhenClosed = false
             panel.level = .floating
             panel.hidesOnDeactivate = false
+            panel.becomesKeyOnlyIfNeeded = true
+            panel.delegate = self
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             let heading = NSTextField(wrappingLabelWithString: "")
-            heading.font = .boldSystemFont(ofSize: 18)
+            heading.font = .boldSystemFont(ofSize: 15)
             heading.textColor = NSColor(calibratedRed: 0.72, green: 0.38, blue: 0.27, alpha: 1)
             let details = NSTextField(wrappingLabelWithString: "")
-            details.font = .systemFont(ofSize: 13)
+            details.font = .systemFont(ofSize: 12)
             details.isSelectable = true
             let review = NSButton(title: tr("reviewConnection"), target: self, action: #selector(reviewCriticalAlert))
             review.bezelStyle = .rounded
@@ -143,33 +150,67 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
             let buttons = NSStackView(views: [dismiss, review])
             buttons.orientation = .horizontal; buttons.alignment = .centerY; buttons.spacing = 12
             let stack = NSStackView(views: [heading, details, buttons])
-            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 18
+            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
             stack.translatesAutoresizingMaskIntoConstraints = false
             let view = panel.contentView!
             view.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-                stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-                stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
-                stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -24),
+                stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+                stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+                stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+                stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -16),
                 heading.widthAnchor.constraint(equalTo: stack.widthAnchor),
                 details.widthAnchor.constraint(equalTo: stack.widthAnchor)
             ])
             criticalPanel = panel; criticalTitle = heading; criticalBody = details
-            panel.center()
         }
         criticalTitle?.stringValue = title
+        criticalTitle?.textColor = NSColor(calibratedRed: 0.72, green: 0.38, blue: 0.27, alpha: 1)
         criticalBody?.stringValue = body
-        // Reuse one nonmodal panel; repeated events never stack modal dialogs.
-        criticalPanel?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        positionCriticalAlert()
+        // A nonactivating menu-bar notice must not steal focus or raise the
+        // configuration window while the user is working in another app.
+        criticalPanel?.orderFrontRegardless()
+    }
+    private func positionCriticalAlert() {
+        guard let panel = criticalPanel else { return }
+        let rawAnchor = noticeAnchor.flatMap { button in
+            button.window.map { $0.convertToScreen(button.convert(button.bounds, to: nil)) }
+        }
+        let anchor = rawAnchor.flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil }
+        let screen = anchor.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        panel.setFrameOrigin(GuardNoticePlacement.origin(anchor: anchor, visibleFrame: visible, size: panel.frame.size))
+    }
+    @discardableResult func showRecoveredNotice(title: String, body: String) -> Bool {
+        guard criticalPanel?.isVisible == true, let token = notice.recover() else { return false }
+        criticalTimer?.invalidate()
+        criticalTitle?.stringValue = title
+        criticalTitle?.textColor = .systemGreen
+        criticalBody?.stringValue = body
+        let timer = Timer(timeInterval: 1, repeats: false) { [weak self] _ in
+            guard let self = self, self.notice.expire(token) else { return }
+            self.criticalPanel?.close()
+            self.criticalTimer = nil
+        }
+        criticalTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        return true
+    }
+    func windowWillClose(_ notification: Notification) {
+        guard let panel = notification.object as? NSPanel, panel === criticalPanel else { return }
+        criticalTimer?.invalidate(); criticalTimer = nil
+        notice.dismiss()
     }
     @objc private func dismissCriticalAlert() { criticalPanel?.close() }
     @objc private func reviewCriticalAlert() {
         criticalPanel?.close()
         onAction?(["action": "settings"])
     }
-    func clearCriticalAlert() { criticalPanel?.close() }
+    func clearCriticalAlert() {
+        criticalTimer?.invalidate(); criticalTimer = nil
+        notice.dismiss(); criticalPanel?.close()
+    }
     private func send(_ value: [String: Any], to web: WKWebView?) {
         guard let web = web, let data = try? JSONSerialization.data(withJSONObject: value),
               let json = String(data: data, encoding: .utf8) else { return }

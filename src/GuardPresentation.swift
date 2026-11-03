@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 // Presentation only: never changes proxy policy or approves a new exit.
 struct GuardConnectionPresentation {
@@ -77,11 +78,12 @@ enum GuardReportFreshness {
 enum GuardNoticeDelivery {
     // A critical in-app window is independent of notification authorization,
     // delivery failures, disabled banners, and Focus settings.
-    static func send(alarm: Bool, showInApp: () -> Void,
+    static func send(alarm: Bool, deliverSystem: Bool = true, showInApp: () -> Void,
                      authorize: (@escaping (Bool, Error?) -> Void) -> Void,
                      post: @escaping (@escaping (Error?) -> Void) -> Void,
                      record: @escaping ([String: Any]) -> Void) {
         if alarm { showInApp() }
+        if !deliverSystem { return }
         authorize { granted, error in
             guard granted else {
                 record(failure("NOTIFICATION_AUTH_FAILED", error))
@@ -99,5 +101,33 @@ enum GuardNoticeDelivery {
             row["message"] = error.localizedDescription
         }
         return row
+    }
+}
+
+struct GuardNoticePresentation {
+    private(set) var visible = false
+    private(set) var recovered = false
+    private var revision = 0
+    mutating func show() { revision += 1; visible = true; recovered = false }
+    mutating func dismiss() { revision += 1; visible = false; recovered = false }
+    mutating func recover() -> Int? {
+        guard visible else { return nil }
+        revision += 1; recovered = true
+        return revision
+    }
+    mutating func expire(_ token: Int) -> Bool {
+        guard visible && recovered && revision == token else { return false }
+        visible = false
+        return true
+    }
+}
+
+enum GuardNoticePlacement {
+    static func origin(anchor: CGRect?, visibleFrame: CGRect, size: CGSize) -> CGPoint {
+        let margin: CGFloat = 8
+        let right = anchor?.maxX ?? visibleFrame.maxX
+        let top = anchor?.minY ?? visibleFrame.maxY
+        return CGPoint(x: max(visibleFrame.minX + margin, min(right - size.width, visibleFrame.maxX - size.width - margin)),
+                       y: max(visibleFrame.minY + margin, min(top - size.height - margin, visibleFrame.maxY - size.height - margin)))
     }
 }
