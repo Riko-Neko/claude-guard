@@ -1,0 +1,21 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python regression tests
+        run: python3 -m unittest discover -s tests
+      - name: Interface event replay
+        run: node tests/test_interface_flow.js
+      - name: Build without installing
+        run: python3 build.py
