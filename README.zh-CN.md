@@ -17,6 +17,12 @@
 - **普通安装（推荐）**：在 VPN 与 Claude 之间增加代理层，由 Guard 守护连接。
 - **增强安装（需要高级权限）**：额外安装开源系统级网络过滤器 LuLu，适合需要更严格直连限制、并熟悉系统权限的用户。
 
+### 实验性质与系统授权
+
+Claude Guard 仍是实验性工具，尤其是 LuLu 增强模式：安装、初始化、配置或移除网络保护组件时，可能需要多次完成 macOS 管理员提权与系统扩展授权。
+
+**我们承诺，这些提权仅用于 Guard 守护组件与 LuLu 网络保护所需的安装、规则配置、维护及移除，包括必要的备份与旧组件清理，不用于与连接守护无关的操作。** 相关实现均已公开，欢迎大家[核验授权调用](https://github.com/Riko-Neko/claude-guard/blob/main/tools/admin_authorization.py)、[安装与规则配置](https://github.com/Riko-Neko/claude-guard/blob/main/tools/gui_setup.py)及[关闭与移除流程](https://github.com/Riko-Neko/claude-guard/blob/main/tools/lifecycle.py)，提出问题或改进建议。
+
 推荐使用 TUN 模式。选择节点后，检查并确认出口与设备环境基准，再开始使用。完整配置流程固定显示在窗口上方，详细说明收进信息按钮。切换方式前请完全退出 Claude 与 Claude Code。
 
 LuLu 安装引导完成后，Guard 会接着应用规则并验证。临时连接超时会在原步骤自动重试，已完成的步骤会保留；通过全部检查后，配置窗口自动关闭。
