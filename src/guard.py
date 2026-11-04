@@ -39,6 +39,7 @@ import system_filter
 import environment_checks
 import ip_reputation
 import domain_checks
+import network_transport
 from diagnostics import failure_diagnostic
 RUNTIME = ROOT / "runtime"
 
@@ -85,6 +86,8 @@ def controller(settings, endpoint):
         if r.status != 200:
             raise ConnectivityError("Clash 本地接口不可用")
         return json.load(r)
+    except FileNotFoundError as error:
+        raise GuardError('当前保存的是旧版 Clash 适配配置。请从 Guard 重新配置，确认当前系统网络或其他代理。') from error
     finally:
         conn.close()
 
@@ -94,6 +97,8 @@ def node_digest(node):
 
 
 def selected_node(settings):
+    if settings.get('transport_kind') == 'system':
+        return {}
     # Ruby reads YAML without exposing credentials in command arguments or logs.
     code = ("require 'yaml';require 'json';c=YAML.load_file(ARGV[0]);"
             "p=c.fetch('proxies').find{|p|p['name']==ARGV[1]};abort('missing') unless p;puts JSON.generate(p)")
@@ -108,6 +113,10 @@ def selected_node(settings):
 
 
 def check_controller(settings, require_tun=False):
+    if settings.get('transport_kind') == 'system':
+        if network_transport.current_path() != settings['network_path']:
+            raise NetworkChanged('系统代理配置发生变化，请重新确认当前网络路径。')
+        return {}
     config = controller(settings, "configs")
     proxies = controller(settings, "proxies").get("proxies", {})
     if config.get("mode") != "rule":
@@ -365,6 +374,8 @@ class Session:
         config = check_controller(self.settings)
         if isinstance(config,dict):
             report = environment_checks.network_mode(config)
+            if self.settings.get('transport_kind') == 'system':
+                report['transport_kind'] = 'system'
             state = report['mode']
             now = time.monotonic()
             if state != self.last_network_mode or now-self.network_mode_at >= 5:
@@ -402,6 +413,9 @@ class Session:
 
     def start(self, create_gateway=True):
         self.open_log()
+        if self.settings.get('transport_kind') == 'system':
+            self.start_system(create_gateway)
+            return
         self.check_config()
         node = selected_node(self.settings)
         self.temp = tempfile.TemporaryDirectory(prefix="claude-guard-")
@@ -445,6 +459,20 @@ class Session:
         self.check_config()
         self.gate.open()
         self.emit("PREFLIGHT_OK", ip=self.settings["expected_ip"], country=self.settings["expected_country"])
+
+    def start_system(self, create_gateway):
+        self.check_config()
+        self.auth = base64.b64encode((secrets.token_hex(8)+':'+secrets.token_hex(24)).encode()).decode()
+        self.core = network_transport.Transport(self.settings['network_path'], self.auth)
+        self.core_port = self.core.server_address[1]
+        if create_gateway:
+            self.proxy = Proxy(('127.0.0.1', self.core_port), self.auth, self.gate, self.emit,
+                               port=self.settings.get('gateway_port', 0))
+            threading.Thread(target=self.proxy.serve_forever, daemon=True).start()
+        self.check_egress()
+        self.check_config()
+        self.gate.open()
+        self.emit('PREFLIGHT_OK', ip=self.settings['expected_ip'], country=self.settings['expected_country'])
 
     def resolve_ssh_targets(self):
         approved = {}
@@ -535,6 +563,9 @@ class Session:
 
         This says nothing about connections that bypass Guard or remote-node splitting.
         """
+        if self.settings.get('transport_kind') == 'system':
+            return (not self.stop.is_set() and self.core is not None and self.core.poll() is None
+                    and self.core.path == self.settings['network_path'])
         if self.stop.is_set() or self.core is None or self.core.poll() is not None or not self.temp:
             return False
         path = Path(self.temp.name) / 'core.json'
@@ -637,7 +668,7 @@ class Session:
     def audit_environment(self):
         if self.reputation:self.reputation.request((self.pending_exit or {}).get('ip',self.settings['expected_ip']))
         current=environment_checks.snapshot(self.settings.get('claude_app','/Applications/Claude.app'))
-        config=controller(self.settings,'configs')
+        config=check_controller(self.settings) if self.settings.get('transport_kind')=='system' else controller(self.settings,'configs')
         with self.lock:
             now=time.monotonic()
             while self.connection_times and self.connection_times[0]<now-60:self.connection_times.popleft()
@@ -688,7 +719,7 @@ class Session:
         # Keep PATH, SSH_AUTH_SOCK and all SSH/browser configuration unchanged.
         args=[str(executable),'--proxy-server='+proxy_url,'--disable-quic']
         self.child=subprocess.Popen(args,env=env,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        self.emit('RUNNING',message='指定代理出口已接入；不审查工具调用，不修改 SSH 或浏览器',pid=self.child.pid)
+        self.emit('RUNNING',message='受控连接已接入；不审查工具调用，不修改 SSH 或浏览器',pid=self.child.pid)
 
     def request_stop(self):
         # End the backend and release its session lock, even if Claude survives.

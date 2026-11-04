@@ -1,14 +1,10 @@
 {
   "configured": false,
   "protected_launch_enabled": false,
-  "expected_node": "SET_DURING_INSTALL",
-  "proxy_group": "AI",
+  "expected_node": "系统网络",
+  "proxy_group": "当前网络",
   "expected_ip": "SET_DURING_INSTALL",
   "expected_country": "SET_DURING_INSTALL",
-  "node_sha256": "SET_DURING_INSTALL",
-  "controller_socket": "/tmp/verge/verge-mihomo.sock",
-  "core_executable": "/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo",
-  "base_proxy_port": 7897,
   "gateway_port": 47831,
   "claude_app": "/Applications/Claude.app",
   "probe_interval_seconds": 5,
@@ -17,5 +13,9 @@
   "environment_check_seconds": 3600,
   "ip_reputation_enabled": true,
   "allow_system_proxy": false,
-  "connection_warning_per_minute": 600
+  "connection_warning_per_minute": 600,
+  "transport_kind": "system",
+  "network_path": {
+    "kind": "system"
+  }
 }

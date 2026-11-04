@@ -21,7 +21,7 @@ class GUISetupTests(unittest.TestCase):
         proxies={'proxies':{'Subscription':{'now':'Fixture'}}}
         session=mock.Mock();session.detected={'ip':'1.1.1.1','loc':'TW'}
         with mock.patch.object(vpn.guard,'running_claude',return_value=[]),mock.patch.object(vpn.guard,'controller',side_effect=[proxies,{'mixed-port':7897}]),mock.patch.object(vpn.subprocess,'check_output',return_value='{"name":"Fixture","type":"test"}'),mock.patch.object(vpn,'DiscoverySession',return_value=session),mock.patch.object(vpn,'choose_group',side_effect=AssertionError('Legacy dialog must not be imported')),mock.patch.object(vpn.environment_checks,'snapshot',return_value={}):
-            settings=vpn.detect(choose_group_callback=picker)
+            settings=vpn.detect_clash(choose_group_callback=picker)
         picker.assert_called_once_with(['Subscription'])
         self.assertEqual(settings['proxy_group'],'Subscription')
 
@@ -50,7 +50,7 @@ class GUISetupTests(unittest.TestCase):
         proxies={'proxies':{'AI':{'now':'Fixture'}}}
         session=mock.Mock();session.detected={'ip':'1.1.1.1','loc':'TW'}
         with mock.patch.object(vpn.guard,'running_claude',return_value=[]),mock.patch.object(vpn.guard,'controller',side_effect=[proxies,{'mixed-port':7897}]),mock.patch.object(vpn.subprocess,'check_output',return_value='{"name":"Fixture","type":"test"}'),mock.patch.object(vpn,'DiscoverySession',return_value=session),mock.patch.object(vpn,'save') as save:
-            result=vpn.detect()
+            result=vpn.detect_clash()
         self.assertEqual(result['expected_ip'],'1.1.1.1');self.assertEqual(result['expected_country'],'TW')
         self.assertFalse(result['protected_launch_enabled']);session.start.assert_called_once_with(create_gateway=False);session.close.assert_called_once();save.assert_not_called()
 

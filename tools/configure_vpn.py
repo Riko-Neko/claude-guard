@@ -10,8 +10,26 @@ import sys
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'src'))
 import guard
 import environment_checks
+import network_transport
 
 def detect(allow_system_proxy=False,choose_group_callback=None):
+    if guard.running_claude():
+        raise guard.GuardError('请先完全退出 Claude 和 Claude Code，再配置 Guard。')
+    path=network_transport.current_path()
+    label='系统网络（VPN／直连）' if path['kind']=='system' else '系统 '+path['kind'].upper()+' 代理'
+    result=dict(transport_kind='system',network_path=path,configured=True,protected_launch_enabled=False,
+        mode='controlled_proxy',expected_node=label,proxy_group='当前网络',expected_ip='',expected_country='',
+        gateway_port=47831,claude_app='/Applications/Claude.app',probe_interval_seconds=5,
+        health_interval_seconds=1,environment_check_seconds=3600,loopback_exception=True,
+        system_filter_status='configured_pending_install',created_at=datetime.datetime.now().astimezone().isoformat())
+    session=DiscoverySession(result)
+    try:session.start(create_gateway=False)
+    finally:session.close()
+    result.update(expected_ip=session.detected['ip'],expected_country=session.detected['loc'])
+    result['environment_baseline']=environment_checks.snapshot(result['claude_app'])
+    return result
+
+def detect_clash(allow_system_proxy=False,choose_group_callback=None):
     if guard.running_claude():raise SystemExit('请先完全退出 Claude / 内置 Code，再配置 Guard；不会替你关闭它们。')
     source=Path.home()/'Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml'
     config={'controller_socket':'/tmp/verge/verge-mihomo.sock','allow_system_proxy':allow_system_proxy}
@@ -50,7 +68,7 @@ def save(result):
 class DiscoverySession(guard.Session):
     def check_config(self):
         # First-time setup keeps its explicit system-proxy confirmation.
-        return guard.check_controller(self.settings,require_tun=True)
+        return guard.check_controller(self.settings,require_tun=self.settings.get('transport_kind')!='system')
 
     def check_egress(self):
         import http.client,ssl

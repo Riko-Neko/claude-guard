@@ -9,6 +9,10 @@ import guard
 import environment_checks
 
 def read_status(settings):
+    if settings.get('transport_kind')=='system':
+        report=environment_checks.network_mode({})
+        report['transport_kind']='system'
+        return report
     try:config=guard.controller(settings,'configs')
     except Exception:config={}
     try:proxy=environment_checks.system_proxy_enabled(environment_checks.command(['/usr/sbin/scutil','--proxy']))

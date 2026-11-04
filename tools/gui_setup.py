@@ -20,7 +20,7 @@ import guard
 import configure_vpn
 from admin_authorization import authorize, AuthorizationError
 STAGED_FILES={'tools':['lulu_setup.py','check_lulu_maintenance.py'],
-              'src':['lulu_archive.py','guard.py','system_filter.py','environment_checks.py','ip_reputation.py','diagnostics.py','domain_checks.py']}
+              'src':['lulu_archive.py','guard.py','system_filter.py','environment_checks.py','ip_reputation.py','diagnostics.py','domain_checks.py','network_transport.py']}
 EMBEDDED=False
 REQUEST_ID=0
 ENVIRONMENT_INTERVAL=3600
@@ -187,7 +187,7 @@ def main(protection='enhanced',restart=False):
         if stage!='enable':run('src/guard.py','check')
         finish_enhanced(settings,stage)
         return
-    dialog('设置 Claude Guard','Claude Guard 将检查当前 VPN，并为 Claude 配置连接保护。请先在 Clash 中选择要使用的节点，开启 TUN 和规则模式，然后继续。')
+    dialog('设置 Claude Guard','Claude Guard 将检测当前网络。你可以使用系统 VPN、其他代理工具或直连网络，请确认当前连接是你希望 Claude 使用的网络，然后继续。')
     allow_system_proxy=False
     while True:
         phase('正在检测 VPN…')
@@ -202,7 +202,7 @@ def main(protection='enhanced',restart=False):
             allow_system_proxy=True
         except Exception as error:
             record_setup('vpn_detection_failed',error)
-            dialog('VPN 检测未通过','暂时无法确认当前 VPN 连接。请检查 Clash 是否正在运行、TUN 和规则模式是否已开启，以及所选节点是否可用，然后重新检测。',('取消','重新检测'))
+            dialog('VPN 检测未通过',str(error) if isinstance(error,(ValueError,guard.GuardError)) else '暂时无法确认当前网络出口，请检查网络或代理后重新检测。',('取消','重新检测'))
     dialog('确认 Claude 使用的 VPN','请确认节点与出口。',('取消','保存并继续'),details={key:settings[key] for key in ('proxy_group','expected_node','expected_ip','expected_country')})
     # Saving revokes old launch permission before any maintenance occurs.
     settings['protection_mode']=protection

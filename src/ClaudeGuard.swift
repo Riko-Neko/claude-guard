@@ -134,11 +134,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         menu.addItem(statusItem)
         menu.addItem(.separator())
         launchItem = NSMenuItem(title: "检查并启动 Claude", action: #selector(launchClaude), keyEquivalent: "")
-        checkItem = NSMenuItem(title: "检查 VPN 连接", action: #selector(checkOnly), keyEquivalent: "")
+        checkItem = NSMenuItem(title: "检查网络连接", action: #selector(checkOnly), keyEquivalent: "")
         for entry in [launchItem!, checkItem!] { entry.target = self; menu.addItem(entry) }
         let result = NSMenuItem(title: "查看连接检查结果", action: #selector(showResult), keyEquivalent: "")
         result.target = self; menu.addItem(result)
-        let setup = NSMenuItem(title: "设置 VPN／重新核验并批准出口…", action: #selector(openInstaller), keyEquivalent: "")
+        let setup = NSMenuItem(title: "设置网络／重新核验并批准出口…", action: #selector(openInstaller), keyEquivalent: "")
         setup.target = self; menu.addItem(setup); setupItem = setup
         let stop = NSMenuItem(title: "断开 Claude 连接", action: #selector(stopSession), keyEquivalent: "")
         stop.target = self; menu.addItem(stop)
@@ -499,7 +499,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 } else if !self.blocked {
                     if process.terminationStatus != 0 {
                         self.display("连接检查未完成", symbol: "shield.slash.fill")
-                        self.notify("连接检查未完成", "请检查 Clash 的运行状态和所选节点，然后重新检查连接。", alarm: true)
+                        self.notify("连接检查未完成", "请检查当前网络或系统代理，然后重新检查连接。", alarm: true)
                     } else {
                         self.display(self.lastCheckText, symbol: "shield")
                     }
@@ -557,7 +557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 approvedPID = (row["pid"] as? NSNumber)?.int32Value
                 let recovered = interface.showRecoveredNotice(title: interface.tr("connectionRecovered"), body: interface.tr("connectionRecoveryBody"))
                 display("Claude 连接保护已开启", symbol: "checkmark.shield.fill")
-                if !recovered { notify("连接保护已开启", "连接检查已通过，Claude 正在使用已设置的 VPN。") }
+                if !recovered { notify("连接保护已开启", "连接检查已通过，Claude 正在使用已确认的网络。") }
             case "RESUMING":
                 resuming = true
                 display("正在重新检查连接…", symbol: "shield.lefthalf.filled")
@@ -575,7 +575,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 display(retrying ? "等待网络恢复…" : "Claude 连接已暂停", symbol: "exclamationmark.shield.fill")
                 // Automatic transient retries do not repeat the same alarm.
                 if row["automatic"] as? Bool != true || !retrying {
-                    notify("连接尚未恢复", row["message"] as? String ?? "请确认 VPN 连接后重试。", alarm: true, diagnostic: row["diagnostic"] as? [String:Any])
+                    notify("连接尚未恢复", row["message"] as? String ?? "请确认当前网络连接后重试。", alarm: true, diagnostic: row["diagnostic"] as? [String:Any])
                 } else {
                     interface.updateCriticalFailure(body: interface.tr(row["message"] as? String ?? "连接检查未完成"), diagnostic: row["diagnostic"] as? [String:Any])
                 }
@@ -613,7 +613,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let recovered = interface.showRecoveredNotice(title: interface.tr("checkPassedNotice"), body: interface.tr("checkPassedNoticeBody"))
                 saveCheckSummary(row)
                 display(lastCheckText, symbol: "checkmark.shield")
-                if !recovered { notify("网络检查通过", "当前 VPN 与已保存的设置一致。可以从菜单检查并启动 Claude。") }
+                if !recovered { notify("网络检查通过", "当前网络出口与已保存的设置一致。可以从菜单检查并启动 Claude。") }
             case "IDLE":
                 blocked = true
                 display("待机 · Claude 未连接", symbol: "shield")

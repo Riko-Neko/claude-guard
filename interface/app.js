@@ -25,8 +25,8 @@ function shortTime(value){const date=new Date(value);return Number.isFinite(date
 function freshTime(value,seconds){const elapsed=Date.now()-Date.parse(value||'');return Number.isFinite(elapsed)&&elapsed>=0&&elapsed<=seconds*1000;}
 function modeMarkup(){
  const report=model.networkMode,known=report&&freshTime(report.checked_at,30)&&typeof report.tun==='boolean';
- const enabled=known&&report.tun;
- return `<section class="network-mode ${known?(enabled?'mode-tun':'mode-proxy'):'mode-unknown'}" aria-label="${t('networkMode')}" tabindex="0" ${tipAttrs('network-mode',known&&!enabled?t('tunRecommendation'):t(enabled?'tunEnabled':'modeUnknown'))}><div class="mode-status-line"><strong>${t('networkMode')}</strong><span>${known?(enabled?'✓ '+t('tunEnabled'):'⚠ '+t('nonTunMode')):t('modeUnknown')}</span></div><div class="mode-state-bar" aria-hidden="true"></div></section>`;
+ const enabled=known&&report.tun,generic=report?.transport_kind==='system'&&freshTime(report.checked_at,30);
+ return `<section class="network-mode ${known?(enabled?'mode-tun':'mode-proxy'):'mode-unknown'}" aria-label="${t('networkMode')}" tabindex="0" ${tipAttrs('network-mode',generic?t('systemNetworkInfo'):known&&!enabled?t('tunRecommendation'):t(enabled?'tunEnabled':'modeUnknown'))}><div class="mode-status-line"><strong>${t('networkMode')}</strong><span>${generic?t('systemNetwork'):known?(enabled?'✓ '+t('tunEnabled'):'⚠ '+t('nonTunMode')):t('modeUnknown')}</span></div><div class="mode-state-bar" aria-hidden="true"></div></section>`;
 }
 function localCheckMarkup(id){
  const rows=(Array.isArray(model.localChecks)?model.localChecks:[]).filter(row=>row.id===id).sort((a,b)=>Date.parse(b.sourceTime||'')-Date.parse(a.sourceTime||''));
@@ -116,7 +116,7 @@ function renderTask(){
  if(model.done){title.textContent=t('done');body.textContent=t('doneBody');return;}
  const request=model.request;if(!request){if(model.phaseInfo){title.textContent=t(model.phaseInfo.title);body.textContent=t(model.phaseInfo.body);}return;}
  const map={'确认 Claude 使用的 VPN':['vpn','reviewExit',1,'confirmExit'],'确认环境检查基准':['baseline','reviewEnv',2,'confirmEnv'],'需要开启 TUN':['vpn','tunFail',1,'force'],'VPN 检测未通过':['vpn','vpnFail',1,'retry'],'选择代理组':['groupChoice','groupBody',1,'continue'],'设置正在进行':['notice','busy',model.stage,'continue']};
- const entry=map[request.title]||['notice','failedBody',model.stage,'continue'];title.textContent=t(entry[0]);body.textContent=t(entry[1]);
+ const entry=map[request.title]||['notice','failedBody',model.stage,'continue'];title.textContent=t(entry[0]);body.textContent=request.title==='VPN 检测未通过'&&request.body?request.body:t(entry[1]);
  if(request.groups?.length){const select=document.createElement('select');select.className='interval group-select';select.id='group-choice';request.groups.forEach(name=>{const option=document.createElement('option');option.textContent=name;option.value=name;select.append(option);});document.querySelector('#group-slot').append(select);}
  const cancel=document.createElement('button');cancel.textContent=t('cancel');cancel.onclick=()=>answer(0);actions.append(cancel);
  const confirm=document.createElement('button');confirm.className='primary';confirm.textContent=t(entry[3]);confirm.onclick=()=>answer(request.buttons.length-1,document.querySelector('#group-choice')?.value);actions.append(confirm);
