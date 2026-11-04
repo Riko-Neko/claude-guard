@@ -22,5 +22,6 @@ jobs:
           node tests/test_setup_selection.js
           node tests/test_ip_risk_ui.js
           node tests/test_domain_ui.js
+          node tests/test_hover_tips.js
       - name: Build without installing
         run: python3 build.py

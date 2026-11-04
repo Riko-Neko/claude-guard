@@ -1,9 +1,12 @@
 'use strict';
 const dictionaries=window.GUARD_STRINGS;
-const model={language:'zh-Hant',view:window.GUARD_VIEW||'setup',mode:'proxy',modeDraft:null,reputationEnabled:true,reputationDraft:null,reputation:null,domains:null,domainExpanded:false,domainInfoExpanded:false,networkMode:null,localChecks:[],menuScrollTop:0,riskExpanded:false,riskInfoExpanded:false,riskInfoScrollTop:0,canApproveExit:false,approvalSending:false,interval:3600,stage:0,busy:false,done:false,configured:false,status:'wait',ip:'—',region:'—',group:'—',node:'—',timezone:'—',version:'—',request:null,phaseInfo:null,report:null,allowed:false,active:false,paused:false,approvalRequired:false,connectionTitle:'',connectionReason:'',approvedIP:'',observedAt:'',invalidatedAt:''};
+const model={language:'zh-Hant',view:window.GUARD_VIEW||'setup',mode:'proxy',modeDraft:null,reputationEnabled:true,reputationDraft:null,reputation:null,domains:null,domainExpanded:false,networkMode:null,localChecks:[],menuScrollTop:0,riskExpanded:false,canApproveExit:false,approvalSending:false,interval:3600,stage:0,busy:false,done:false,configured:false,status:'wait',ip:'—',region:'—',group:'—',node:'—',timezone:'—',version:'—',request:null,phaseInfo:null,report:null,allowed:false,active:false,paused:false,approvalRequired:false,connectionTitle:'',connectionReason:'',approvedIP:'',observedAt:'',invalidatedAt:''};
 const t=k=>dictionaries[model.language]?.[k]||dictionaries['zh-Hant'][k]||k;
 const shield='<svg class="shield" viewBox="0 0 36 40" aria-hidden="true"><path d="M18 2 32 8v12c0 9-9 15-14 18C13 35 4 29 4 20V8Z" fill="currentColor" opacity=".14"/><path d="M18 3 31 9v11c0 8-8 14-13 17C13 34 5 28 5 20V9Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m11 20 5 5 10-12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const info=key=>`<details class="info"><summary aria-label="${t('info')}">i</summary><div class="tip">${t(key)}</div></details>`;
+const attr=value=>String(value??'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const tipAttrs=(key,text)=>`data-tip-key="${attr(key)}" data-tip="${attr(text)}"`;
+const infoButton=(key,id='')=>`<button class="risk-info-toggle" ${id?`id="${id}"`:''} ${tipAttrs(id||key,t(key))} aria-label="${t('info')}">i</button>`;
+const info=key=>`<span class="info">${infoButton(key)}</span>`;
 const language=()=>`<select class="lang" id="language" aria-label="${t('language')}"><option value="zh-Hant">繁體中文</option><option value="zh-Hans">简体中文</option><option value="en">English</option></select>`;
 function send(action,details={}){
  if(window.webkit?.messageHandlers?.guard){window.webkit.messageHandlers.guard.postMessage({action,...details});}
@@ -14,8 +17,8 @@ function bind(){
  document.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>send(button.dataset.action));
  document.querySelectorAll('.info').forEach(detail=>detail.onclick=e=>e.stopPropagation());
 }
-function render(){document.documentElement.lang=model.language;document.querySelector('#app').innerHTML=model.view==='menu'?menu():setup();bind();bindRisk();bindDomains();if(model.connectionReason){document.querySelector('#live-notice-title').textContent=model.connectionTitle||t('connectionFailed');document.querySelector('#live-notice-body').textContent=model.connectionReason;}if(model.view!=='menu')bindSetup();else{bindMenu();}}
-function connectionNotice(){return model.connectionReason?`<section id="live-notice" class="connection-notice" role="alert"><strong id="live-notice-title"></strong><p id="live-notice-body"></p><button class="ghost small" data-action="settings">${t('reviewConnection')}</button></section>`:'';}
+function render(){document.documentElement.lang=model.language;document.querySelector('#app').innerHTML=model.view==='menu'?menu():setup();bind();bindRisk();bindDomains();if(model.connectionReason){document.querySelector('#live-notice-title').textContent=model.connectionTitle||t('connectionFailed');document.querySelector('#live-notice-body').textContent=model.connectionReason;}if(model.view!=='menu')bindSetup();else{bindMenu();}bindTooltips();}
+function connectionNotice(){return model.connectionReason?`<section id="live-notice" class="connection-notice" role="alert" tabindex="0" ${tipAttrs('connection-notice',model.connectionReason)}><strong id="live-notice-title"></strong><p id="live-notice-body"></p><button class="ghost small" data-action="settings">${t('reviewConnection')}</button></section>`:'';}
 const actionPaths={check:'M20 7v5h-5 M20 12a8 8 0 1 0-2 6',settings:'M4 7h16 M4 17h16 M8 4v6 M16 14v6',results:'M6 3h9l3 3v15H6z M9 10h6 M9 14h6 M9 18h4',pause:'M8 5v14 M16 5v14',help:'M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 3 M12 17h.01',logs:'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5',uninstall:'M4 7h16 M9 7V4h6v3 M7 7l1 13h8l1-13 M10 10v7 M14 10v7',quit:'M12 3v9 M7 5a8 8 0 1 0 10 0'};
 function actionIcon(name){return `<svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${actionPaths[name]||actionPaths.check}"/></svg>`;}
 function shortTime(value){const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleTimeString(model.language==='en'?'en-GB':model.language==='zh-Hans'?'zh-CN':'zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}):t('unknownTime');}
@@ -23,14 +26,15 @@ function freshTime(value,seconds){const elapsed=Date.now()-Date.parse(value||'')
 function modeMarkup(){
  const report=model.networkMode,known=report&&freshTime(report.checked_at,30)&&typeof report.tun==='boolean';
  const enabled=known&&report.tun;
- return `<section class="network-mode ${known?(enabled?'mode-tun':'mode-proxy'):'mode-unknown'}" aria-label="${t('networkMode')}"><div class="mode-status-line"><strong>${t('networkMode')}</strong><span>${known?(enabled?'✓ '+t('tunEnabled'):'⚠ '+t('nonTunMode')):t('modeUnknown')}</span></div><div class="mode-state-bar" aria-hidden="true"></div>${known&&!enabled?`<p>${t('tunRecommendation')}</p>`:''}</section>`;
+ return `<section class="network-mode ${known?(enabled?'mode-tun':'mode-proxy'):'mode-unknown'}" aria-label="${t('networkMode')}" tabindex="0" ${tipAttrs('network-mode',known&&!enabled?t('tunRecommendation'):t(enabled?'tunEnabled':'modeUnknown'))}><div class="mode-status-line"><strong>${t('networkMode')}</strong><span>${known?(enabled?'✓ '+t('tunEnabled'):'⚠ '+t('nonTunMode')):t('modeUnknown')}</span></div><div class="mode-state-bar" aria-hidden="true"></div></section>`;
 }
 function localCheckMarkup(id){
  const rows=(Array.isArray(model.localChecks)?model.localChecks:[]).filter(row=>row.id===id).sort((a,b)=>Date.parse(b.sourceTime||'')-Date.parse(a.sourceTime||''));
  const row=rows[0],fresh=row&&!row.stale&&freshTime(row.sourceTime,model.interval);
  const state=!fresh?'unknown':row.status==='warning'?'warning':row.status==='observed'?'observed':'unverified';
  const key=state==='unknown'?(row?'checkStale':'checkPending'):state==='warning'?'checkWarning':state==='observed'?'checkObserved':'checkUnverified';
- return `<button class="local-check check-${state}" data-action="results"><span class="check-name">${t('check_'+id)}</span><span class="check-state">${t(key)}</span><span class="check-color-bar" aria-hidden="true"></span></button>`;
+ const detail=[t('check_'+id),t(key),row?.message,row?.sourceTime?shortTime(row.sourceTime):''].filter(Boolean).join('\n');
+ return `<button class="local-check check-${state}" data-action="results" ${tipAttrs('local-'+id,detail)} aria-label="${attr(detail)}"><span class="check-name">${t('checkShort_'+id)}</span><span class="check-color-bar" aria-hidden="true"></span></button>`;
 }
 function menu(){
  const primaryAction=model.approvalRequired?(model.canApproveExit?'approveIP':model.active?'settings':'check'):'launch';
@@ -42,12 +46,51 @@ function menu(){
  <div class="menu-actions"><button class="primary menu-primary" data-action="${primaryAction}" ${!model.allowed||model.busy||model.approvalSending||(model.active&&!model.paused&&!model.approvalRequired)?'disabled':''}>${primaryLabel}</button><div class="menu-grid"><button data-action="settings">${actionIcon('settings')}${t(model.configured?'menuReconfigure':'settings')}</button><button data-action="results">${actionIcon('results')}${t('menuResults')}</button><button data-action="pause" ${!model.active?'disabled':''}>${actionIcon('pause')}${t('menuPause')}</button></div></div>
  <footer class="menu-foot">${['help','logs','uninstall','quit'].map(action=>`<button class="ghost" data-action="${action}">${actionIcon(action)}<span>${t('menu_'+action)}</span></button>`).join('')}</footer></div>`;
 }
+let activeTipKey=null,tipHideTimer;
+function hideTooltip(){
+ if(tipHideTimer!==undefined)window.clearTimeout?.(tipHideTimer);
+ tipHideTimer=undefined;activeTipKey=null;
+ const card=document.querySelector('#hover-card');if(card)card.hidden=true;
+}
+function showTooltip(anchor){
+ if(tipHideTimer!==undefined)window.clearTimeout?.(tipHideTimer);
+ tipHideTimer=undefined;activeTipKey=anchor.dataset.tipKey;
+ const card=document.querySelector('#hover-card');if(!card)return;
+ if(card.textContent!==anchor.dataset.tip)card.textContent=anchor.dataset.tip;card.hidden=false;
+ anchor.setAttribute('aria-describedby','hover-card');
+ const a=anchor.getBoundingClientRect(),b=card.getBoundingClientRect();
+ const left=Math.max(8,Math.min(a.left+a.width/2-b.width/2,window.innerWidth-b.width-8));
+ const below=a.bottom+6,top=below+b.height<=window.innerHeight-8?below:Math.max(8,a.top-b.height-6);
+ card.style.setProperty('left',left+'px');card.style.setProperty('top',top+'px');
+}
+function scheduleTooltipHide(){
+ if(tipHideTimer!==undefined)window.clearTimeout?.(tipHideTimer);
+ tipHideTimer=window.setTimeout(hideTooltip,160);
+}
+function bindTooltips(){
+ const anchors=[...document.querySelectorAll('[data-tip-key]')];
+ for(const anchor of anchors){
+  anchor.onmouseenter=()=>showTooltip(anchor);anchor.onmouseleave=scheduleTooltipHide;
+  anchor.onfocus=()=>showTooltip(anchor);anchor.onblur=scheduleTooltipHide;
+ }
+ const card=document.querySelector('#hover-card');if(!card)return;
+ card.onmouseenter=()=>{if(tipHideTimer!==undefined)window.clearTimeout?.(tipHideTimer);};
+ card.onmouseleave=scheduleTooltipHide;
+ if(activeTipKey){const replacement=anchors.find(a=>a.dataset.tipKey===activeTipKey);if(replacement)showTooltip(replacement);else hideTooltip();}
+ document.onkeydown=e=>{if(e.key==='Escape')hideTooltip();};
+}
 function bindMenu(){
- const scroll=document.querySelector('.menu-scroll');scroll.scrollTop=model.menuScrollTop;scroll.onscroll=()=>{model.menuScrollTop=scroll.scrollTop;};
+ const scroll=document.querySelector('.menu-scroll');scroll.scrollTop=model.menuScrollTop;scroll.onscroll=()=>{model.menuScrollTop=scroll.scrollTop;if(activeTipKey)hideTooltip();};
  document.querySelector('#menu-status').textContent=model.statusText||t('idle');
  const ip=document.querySelector('#menu-ip');ip.textContent=model.ip||'—';ip.className='exit-value mono'+(String(model.ip).includes(':')?' ipv6':'');
  document.querySelector('#menu-region').textContent=model.region&&!['—','未记录','未確認','未确认','unknown'].includes(model.region)?model.region:'—';
  const observed=document.querySelector('#menu-observed-time');observed.textContent=model.observedAt?shortTime(model.observedAt):t('notChecked');observed.title=model.observedAt||'';
+ if(typeof window.getComputedStyle==='function'){
+  const children=[...scroll.children],gap=parseFloat(window.getComputedStyle(scroll).rowGap)||0;
+  const content=children.reduce((height,child)=>height+child.getBoundingClientRect().height,0)+Math.max(0,children.length-1)*gap;
+  const desired=model.riskExpanded||model.domainExpanded?600:Math.ceil(window.innerHeight-scroll.clientHeight+content);
+  if(Number.isFinite(desired)&&Math.abs(desired-window.innerHeight)>1)send('menuHeight',{height:desired});
+ }
 }
 
 function setup(){
@@ -87,16 +130,14 @@ function riskMarkup(){
  const r=riskData(),n=r?.score,valid=typeof n==='number'&&Number.isFinite(n)&&n>=1&&n<=100;
  const fresh=r&&Number.isFinite(Date.parse(r.checked_at))&&Date.now()-Date.parse(r.checked_at)>=0&&Date.now()-Date.parse(r.checked_at)<3600000;
  const marker=valid&&fresh?1+(n-1)/99*98:50;
- return `<div class="risk-block" id="risk-block"><div class="risk-heading"><strong>${t('ipRisk')}</strong><button class="risk-info-toggle" id="risk-info-toggle" aria-label="${t('info')}" aria-expanded="${model.riskInfoExpanded}" aria-controls="risk-info">i</button><span class="risk-score ${valid&&fresh?'known':'unknown'}" id="risk-score"></span>${model.view==='menu'?`<button class="ghost risk-refresh" data-action="refreshRisk" aria-label="${t('refreshRisk')}" title="${t('refreshRisk')}" ${!model.configured||model.busy||!model.reputationEnabled?'disabled':''}>${actionIcon('check')}</button>`:''}</div><div class="risk-scale" id="risk-scale" role="img" aria-label="${t('riskScale')}"><svg class="risk-track" viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true"><g class="risk-marker ${valid&&fresh?'':'unknown'}"><path class="risk-marker-outline" d="M${marker} 2v8"/><path d="M${marker} 2v8"/></g></svg><div class="risk-legend"><span>1%</span><span>100%</span></div></div><div class="risk-info-body" id="risk-info" ${model.riskInfoExpanded?'':'hidden'}>${t('riskInfo')}</div>${model.view!=='menu'?'<div class="subtle" id="risk-progress"></div>':''}<details id="risk-details" ${model.riskExpanded?'open':''}><summary>${t('riskSources')}${model.view==='menu'&&r?`<span class="risk-summary-meta"> · ${r.total_sources-r.pending}/${r.total_sources}${r.scored_sources===1?' · '+t('riskSingleShort'):''}</span>`:''}</summary>${model.view==='menu'?'<div class="subtle" id="risk-progress"></div>':''}<p class="risk-source-note">${t('riskSourceInfo')}</p><div id="risk-source-list"></div></details>${model.view==='setup'?`<div class="env-row"><button class="ghost small" data-action="refreshRisk" ${!model.configured||model.busy||!model.reputationEnabled?'disabled':''}>${t('refreshRisk')}</button><label class="risk-opt"><input id="risk-enable" type="checkbox" ${model.reputationEnabled?'checked':''} ${model.busy?'disabled':''}>${t('enableRisk')}</label></div>`:''}</div>`;
+ return `<div class="risk-block" id="risk-block"><div class="risk-heading">${model.view==='menu'?`<button class="risk-title-toggle" id="risk-title-toggle" aria-expanded="${model.riskExpanded}" aria-controls="risk-details">${model.riskExpanded?'▾':'▸'} ${t('ipRisk')}</button>`:`<strong>${t('ipRisk')}</strong>`}${infoButton('riskInfo','risk-info-toggle')}<span class="risk-score ${valid&&fresh?'known':'unknown'}" id="risk-score"></span>${model.view==='menu'?`<button class="ghost risk-refresh" data-action="refreshRisk" aria-label="${t('refreshRisk')}" title="${t('refreshRisk')}" ${!model.configured||model.busy||!model.reputationEnabled?'disabled':''}>${actionIcon('check')}</button>`:''}</div><div class="risk-scale" id="risk-scale" role="img" aria-label="${t('riskScale')}"><svg class="risk-track" viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true"><g class="risk-marker ${valid&&fresh?'':'unknown'}"><path class="risk-marker-outline" d="M${marker} 2v8"/><path d="M${marker} 2v8"/></g></svg><div class="risk-legend"><span>1%</span><span>100%</span></div></div>${model.view!=='menu'?'<div class="subtle" id="risk-progress"></div>':''}<details id="risk-details" ${model.riskExpanded?'open':''}><summary>${t('riskSources')}${model.view==='menu'&&r?`<span class="risk-summary-meta"> · ${r.total_sources-r.pending}/${r.total_sources}${r.scored_sources===1?' · '+t('riskSingleShort'):''}</span>`:''}</summary>${model.view==='menu'?'<div class="subtle" id="risk-progress"></div>':''}<p class="risk-source-note">${t('riskSourceInfo')}</p><div id="risk-source-list"></div></details>${model.view==='setup'?`<div class="env-row"><button class="ghost small" data-action="refreshRisk" ${!model.configured||model.busy||!model.reputationEnabled?'disabled':''}>${t('refreshRisk')}</button><label class="risk-opt"><input id="risk-enable" type="checkbox" ${model.reputationEnabled?'checked':''} ${model.busy?'disabled':''}>${t('enableRisk')}</label></div>`:''}</div>`;
 }
 function bindRisk(){
+ if(model.view==='menu')document.querySelector('#risk-title-toggle').onclick=()=>{model.riskExpanded=!model.riskExpanded;render();};
  const r=riskData(),n=r?.score;
  const fresh=r&&Number.isFinite(Date.parse(r.checked_at))&&Date.now()-Date.parse(r.checked_at)>=0&&Date.now()-Date.parse(r.checked_at)<3600000;
  const valid=typeof n==='number'&&Number.isFinite(n)&&n>=1&&n<=100&&fresh;
  const badge=document.querySelector('#risk-score');if(!badge)return;
- document.querySelector('#risk-info-toggle').onclick=()=>{model.riskInfoExpanded=!model.riskInfoExpanded;render();};
- const explanation=document.querySelector('#risk-info');
- if(model.riskInfoExpanded){explanation.scrollTop=model.riskInfoScrollTop;explanation.onscroll=()=>{model.riskInfoScrollTop=explanation.scrollTop;};}
  if(valid)badge.style.setProperty('--risk-hue',String(Math.round((100-n)/99*120)));
  badge.textContent=!model.reputationEnabled?t('riskDisabled'):valid?n+'%':t('riskUnknown');
  document.querySelector('#risk-progress').textContent=r?`${t('riskReturned')} ${r.total_sources-r.pending}/${r.total_sources} · ${t('riskScored')} ${r.scored_sources} · ${shortTime(r.checked_at)}`:t('riskPending');
@@ -125,15 +166,15 @@ function domainData(){
 }
 function domainMarkup(){
  const r=domainData(),n=r?.score,valid=Number.isInteger(n)&&n>=0&&n<=100,marker=valid?1+n*.98:50;
- return `<div class="domain-block"><div class="risk-heading"><strong>${t('domainPass')}</strong><button class="risk-info-toggle" id="domain-info-toggle" aria-label="${t('info')}" aria-expanded="${model.domainInfoExpanded}" aria-controls="domain-info">i</button><span class="risk-score ${valid?'known':'unknown'}" id="domain-score"></span><button class="ghost risk-refresh" data-action="refreshDomains" aria-label="${t('domainRefresh')}" title="${t('domainRefresh')}" ${!model.configured||model.busy?'disabled':''}>${actionIcon('check')}</button></div><div class="risk-scale" role="img" aria-label="${t('domainScale')}"><svg class="risk-track domain-track" viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true"><g class="risk-marker ${valid?'':'unknown'}"><path class="risk-marker-outline" d="M${marker} 2v8"/><path d="M${marker} 2v8"/></g></svg><div class="risk-legend"><span>0%</span><span>100%</span></div></div><div class="risk-info-body" id="domain-info" ${model.domainInfoExpanded?'':'hidden'}>${t('domainInfo')}</div><details id="domain-details" ${model.domainExpanded?'open':''}><summary>${t('domainDetails')}</summary><p class="risk-source-note" id="domain-meta"></p><div id="domain-list"></div><details class="domain-geosite"><summary>geosite:anthropic</summary><p class="risk-source-note" id="domain-geosite-meta"></p><div id="domain-geosite-list"></div></details></details></div>`;
+ return `<div class="domain-block"><div class="risk-heading"><button class="risk-title-toggle" id="domain-title-toggle" aria-expanded="${model.domainExpanded}" aria-controls="domain-details">${model.domainExpanded?'▾':'▸'} ${t('domainPass')}</button>${infoButton('domainInfo','domain-info-toggle')}<span class="risk-score ${valid?'known':'unknown'}" id="domain-score"></span><button class="ghost risk-refresh" data-action="refreshDomains" aria-label="${t('domainRefresh')}" title="${t('domainRefresh')}" ${!model.configured||model.busy?'disabled':''}>${actionIcon('check')}</button></div><div class="risk-scale" role="img" aria-label="${t('domainScale')}"><svg class="risk-track domain-track" viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true"><g class="risk-marker ${valid?'':'unknown'}"><path class="risk-marker-outline" d="M${marker} 2v8"/><path d="M${marker} 2v8"/></g></svg><div class="risk-legend"><span>0%</span><span>100%</span></div></div><details id="domain-details" ${model.domainExpanded?'open':''}><summary>${t('domainDetails')}</summary><p class="risk-source-note" id="domain-meta"></p><div id="domain-list"></div><details class="domain-geosite"><summary>geosite:anthropic</summary><p class="risk-source-note" id="domain-geosite-meta"></p><div id="domain-geosite-list"></div></details></details></div>`;
 }
 function bindDomains(){
  if(model.view!=='menu')return;
+ document.querySelector('#domain-title-toggle').onclick=()=>{model.domainExpanded=!model.domainExpanded;render();};
  const badge=document.querySelector('#domain-score');if(!badge)return;
  const r=domainData(),n=r?.score,valid=Number.isInteger(n)&&n>=0&&n<=100;
  badge.textContent=valid?n+'%':t('riskUnknown');
  if(valid)badge.style?.setProperty('--risk-hue',String(n===0?0:n<90?35+(Math.max(30,n)-30):125));
- document.querySelector('#domain-info-toggle').onclick=()=>{model.domainInfoExpanded=!model.domainInfoExpanded;render();};
  document.querySelector('#domain-details').ontoggle=e=>{model.domainExpanded=e.target.open;};
  document.querySelector('#domain-meta').textContent=r?`${r.rows.filter(row=>row.status!=='pending').length}/${r.rows.length} · ${shortTime(r.checked_at)}${r.complete?'':' · '+t('riskLoading')}`:t('domainPending');
  const appendRows=(target,rows)=>{

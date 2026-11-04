@@ -44,6 +44,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     private var settingsReady = false
     private var waitingEvents = [[String: Any]]()
     private let popover = NSPopover()
+    private var preferredMenuHeight: CGFloat = 520
     private var criticalPanel: NSPanel?
     private var criticalTitle: NSTextField?
     private var criticalBody: NSTextField?
@@ -77,7 +78,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
            let data = try? Data(contentsOf: url),
            let tables = try? JSONDecoder().decode([String: [String: String]].self, from: data) { self.tables = tables }
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 360, height: 600)
+        popover.contentSize = NSSize(width: 360, height: preferredMenuHeight)
     }
     func tr(_ text: String) -> String {
         if let translated = tables[language]?[text] { return translated }
@@ -344,7 +345,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     func refreshMenu() {
         let value = currentState()
         let available = noticeAnchor?.window?.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 800
-        popover.contentSize = NSSize(width: 360, height: min(600, available - 70))
+        popover.contentSize = NSSize(width: 360, height: min(preferredMenuHeight, available - 70))
         send(value, to: menuWeb)
         if settingsReady { send(value, to: settingsWeb) }
     }
@@ -356,7 +357,11 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.isFileURL == true,
               let body = message.body as? [String: Any] else { return }
-        if body["action"] as? String == "ready" {
+        if body["action"] as? String == "menuHeight", message.webView === menuWeb,
+           let height = body["height"] as? NSNumber, height.doubleValue.isFinite {
+            let target = CGFloat(max(440, min(650, height.doubleValue)))
+            if abs(target - preferredMenuHeight) > 1 { preferredMenuHeight = target; refreshMenu() }
+        } else if body["action"] as? String == "ready" {
             send(currentState(), to: message.webView)
             if message.webView === settingsWeb {
                 settingsReady = true

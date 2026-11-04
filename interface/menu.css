@@ -122,3 +122,27 @@
 .popover .menu-foot .action-icon{width:12px;height:12px}
 .popover .connection-notice{padding:8px 10px;font-size:13px;border-radius:10px}
 .popover .connection-notice p{font-size:13px;margin:5px 0;line-height:1.4}
+.popover .checks-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.popover .local-check{align-items:stretch;text-align:center;padding:7px 4px;gap:5px;min-height:37px}
+.popover .check-name{font-size:13px;white-space:nowrap}
+.popover .connection-notice{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 5px;max-height:none}
+.popover .connection-notice strong{font-size:13px;grid-column:1}
+.popover .connection-notice p{grid-column:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+.popover .connection-notice button{grid-column:2;grid-row:1/3;align-self:center;font-size:12px;padding:4px}
+
+/* Keep the complete collapsed menu visible, including warnings and IPv6. */
+.popover{gap:4px}.popover .top{min-height:26px}.ip-hero{padding-top:6px;padding-bottom:6px}
+.menu-risk-card{padding-top:8px;padding-bottom:8px}
+.popover .risk-scale{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px;align-items:center}
+.popover .risk-scale .risk-track{grid-column:2;grid-row:1}
+.popover .risk-legend{display:contents}.popover .risk-legend span{font-size:10px;line-height:1}
+.popover .risk-legend span:first-child{grid-column:1;grid-row:1}.popover .risk-legend span:last-child{grid-column:3;grid-row:1}
+.popover .risk-block details,.domain-block details{margin:3px 0}
+.domain-block{padding-top:6px;margin-top:6px}
+.popover .menu-primary{min-height:32px}.popover .menu-grid button{min-height:30px}
+.popover .connection-notice{padding:6px 8px}.popover .connection-notice p{display:none}
+
+.popover .risk-title-toggle{font-size:13px;font-weight:650;text-align:left;line-height:1.4;padding:0;border:0;border-radius:3px;background:none;color:var(--ink);min-width:0}
+.popover .risk-block>details,.popover .domain-block>details{margin:0}
+.popover .risk-block>details>summary,.popover .domain-block>details>summary{display:none}
+.popover .risk-block>details[open],.popover .domain-block>details[open]{padding-top:5px}

@@ -302,7 +302,11 @@
     "domainNoTrace": "站點未提供有效 trace，已核對代理路徑",
     "domainTraceUnavailable": "trace 暫不可用，已核對代理路徑",
     "domainSupplement": "僅清單外補充項",
-    "domainScopeNote": "此 IP 僅代表上述主機；子域範圍另以代理路徑覆蓋核對。"
+    "domainScopeNote": "此 IP 僅代表上述主機；子域範圍另以代理路徑覆蓋核對。",
+    "checkShort_dns": "DNS",
+    "checkShort_webrtc": "WebRTC",
+    "checkShort_time": "時間",
+    "checkShort_environment": "裝置"
   },
   "zh-Hans": {
     "configure": "安装与配置",
@@ -598,7 +602,11 @@
     "domainNoTrace": "站点未提供有效 trace，已核对代理路径",
     "domainTraceUnavailable": "trace 暂不可用，已核对代理路径",
     "domainSupplement": "仅清单外补充项",
-    "domainScopeNote": "此 IP 仅代表上述主机；子域范围另以代理路径覆盖核对。"
+    "domainScopeNote": "此 IP 仅代表上述主机；子域范围另以代理路径覆盖核对。",
+    "checkShort_dns": "DNS",
+    "checkShort_webrtc": "WebRTC",
+    "checkShort_time": "时间",
+    "checkShort_environment": "设备"
   },
   "en": {
     "configure": "Install & configure",
@@ -903,6 +911,10 @@
     "domainNoTrace": "No valid trace; pinned route checked instead",
     "domainTraceUnavailable": "Trace unavailable; pinned route checked instead",
     "domainSupplement": "Supplemental entries only",
-    "domainScopeNote": "This IP applies only to this host. Subdomain coverage is checked separately against the pinned route."
+    "domainScopeNote": "This IP applies only to this host. Subdomain coverage is checked separately against the pinned route.",
+    "checkShort_dns": "DNS",
+    "checkShort_webrtc": "WebRTC",
+    "checkShort_time": "Time",
+    "checkShort_environment": "Device"
   }
 }

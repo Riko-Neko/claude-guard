@@ -10,7 +10,7 @@
 
 ## 安装与配置
 
-从 [Releases](https://github.com/Riko-Neko/claude-guard/releases) 下载 `ClaudeGuard-0.13.0.pkg`，完全退出 Claude、Claude Code 与旧版 Guard 后再运行。完成后从“应用程序”打开 Claude Guard，在同一个窗口完成配置。
+从 [Releases](https://github.com/Riko-Neko/claude-guard/releases) 下载 `ClaudeGuard-0.13.1.pkg`，完全退出 Claude、Claude Code 与旧版 Guard 后再运行。完成后从“应用程序”打开 Claude Guard，在同一个窗口完成配置。
 
 安装优先尝试官方免重启激活。旧的待移除记录只作状态参考，不会阻止安装。若本次激活未完成，可稍后重试或自行选择普通模式；Guard 不会强迫重启或自动降低保护方式。现有 LuLu 设置会保留，并以“重新启用”标示。
 
