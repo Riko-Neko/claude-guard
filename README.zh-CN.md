@@ -10,7 +10,7 @@
 
 ## 安装与配置
 
-从 [Releases](https://github.com/Riko-Neko/claude-guard/releases) 下载 `ClaudeGuard-0.12.0.pkg`，完全退出 Claude、Claude Code 与旧版 Guard 后再运行。完成后从“应用程序”打开 Claude Guard，在同一个窗口完成配置。
+从 [Releases](https://github.com/Riko-Neko/claude-guard/releases) 下载 `ClaudeGuard-0.13.0.pkg`，完全退出 Claude、Claude Code 与旧版 Guard 后再运行。完成后从“应用程序”打开 Claude Guard，在同一个窗口完成配置。
 
 安装优先尝试官方免重启激活。旧的待移除记录只作状态参考，不会阻止安装。若本次激活未完成，可稍后重试或自行选择普通模式；Guard 不会强迫重启或自动降低保护方式。现有 LuLu 设置会保留，并以“重新启用”标示。
 
@@ -69,3 +69,5 @@ IP 风险（纯净度参考）与本地 DNS／WebRTC 放在同一个检查区域
 ## 授权
 
 原创代码与素材采用 [MIT 许可](LICENSE)，允许使用、修改与再发布并保留版权及许可声明。第三方组件保持各自原有许可，详见第三方声明。
+
+域名通过率与 IP 风险共用状态卡片，支持站点 trace IP 核对、指定代理路径与 geosite 去重补充。数值不是安全概率；详见[检查方法与权重](docs/DOMAIN_CHECKS.md)。

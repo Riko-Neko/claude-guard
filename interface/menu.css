@@ -81,3 +81,44 @@
 .popover .risk-refresh{display:grid;place-items:center;padding:4px;width:26px;height:26px;border-radius:8px}.popover .risk-refresh .action-icon{width:17px;height:17px}
 
 .risk-summary-meta{font-size:12px;font-weight:400;color:var(--muted)}
+.domain-block{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.domain-track{background:linear-gradient(90deg,#cc5148 0%,#d49b40 30%,#3b9d68 90%,#3b9d68 100%)}
+.domain-block details{font-size:13px;margin:9px 0}.domain-block summary{padding:3px 0;font-weight:550}
+.domain-source strong{display:block;overflow-wrap:anywhere;font:600 12px/1.6 ui-monospace,SFMono-Regular,monospace}
+.domain-source p{font-size:12px;line-height:1.6}
+.domain-geosite{border-top:1px solid var(--line);padding-top:7px}
+
+/* Compact shell: reduce surfaces and controls before reducing reading size. */
+.popover{gap:6px;padding:10px;font-size:13.5px;line-height:1.4}
+.popover .top{min-height:28px}.popover .brand{gap:7px}.popover .brand strong{font-size:18px}
+.popover .shield{width:24px;height:28px}.popover .lang{padding:3px 6px;font-size:12px}
+.ip-hero{padding:8px 10px;border-radius:12px}.ip-heading{gap:6px}
+.ip-heading>span:first-child{font-size:12px}.connection-pill{padding:2px 7px;font-size:12px}
+.exit-value{font-size:25px;line-height:1.2;margin:4px 0}.exit-value.ipv6{font-size:19px}
+.ip-meta{gap:6px;font-size:12px}.region-chip{padding:1px 5px}.ip-recheck{font-size:12px}
+.menu-scroll{gap:7px}.network-mode{padding:8px 10px;border-radius:10px}
+.mode-status-line{font-size:13px;gap:6px}.mode-state-bar{margin-top:5px;height:3px}
+.network-mode p{font-size:12px;line-height:1.4;margin-top:4px}
+.menu-risk-card{padding:9px 10px;border-radius:11px}.popover .risk-block{margin-bottom:0}
+.popover .risk-heading{font-size:13px;gap:5px}.popover .risk-score{padding:1px 7px;font-size:14px}
+.popover .risk-info-toggle{width:18px;height:18px}.popover .risk-refresh{width:22px;height:22px;padding:2px}
+.popover .risk-scale{margin:7px 0 2px}.popover .risk-track{height:7px}
+.popover .risk-legend{font-size:10px;margin-top:3px}
+.popover .risk-block details,.domain-block details{margin:5px 0;font-size:12px}
+.popover .risk-block details>summary,.domain-block summary{padding:2px 0}
+.domain-block{margin-top:8px;padding-top:8px}
+.popover .risk-info-body{padding:8px;margin-top:6px;font-size:12.5px;line-height:1.5;max-height:140px}
+.popover .risk-source{padding:6px 0}.popover .risk-source p{margin:2px 0;font-size:12px}
+.popover .subtle,.risk-source-note{font-size:12px;line-height:1.4;margin-top:4px}
+.checks-heading{margin-bottom:4px}.checks-heading strong{font-size:13px}
+.popover .small{padding:3px 5px;font-size:12px}.checks-grid{gap:5px}
+.local-check{padding:6px 8px;border-radius:9px;gap:2px}.check-name{font-size:13px}
+.check-state{font-size:12px}.check-color-bar{height:3px;margin-top:2px}
+.popover .menu-primary{min-height:34px;padding:6px 10px;margin-bottom:5px;font-size:14px}
+.popover .menu-grid{gap:5px}.popover .menu-grid button{padding:5px;font-size:13px;min-height:32px;gap:4px;border-radius:8px}
+.popover .menu-grid .action-icon{width:15px;height:15px}
+.popover .menu-foot{gap:3px;margin:0;padding-top:6px}
+.popover .menu-foot button{font-size:12px;min-height:26px;padding:3px 1px;gap:3px}
+.popover .menu-foot .action-icon{width:12px;height:12px}
+.popover .connection-notice{padding:8px 10px;font-size:13px;border-radius:10px}
+.popover .connection-notice p{font-size:13px;margin:5px 0;line-height:1.4}

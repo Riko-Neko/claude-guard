@@ -20,7 +20,7 @@ import guard
 import configure_vpn
 from admin_authorization import authorize, AuthorizationError
 STAGED_FILES={'tools':['lulu_setup.py','check_lulu_maintenance.py'],
-              'src':['lulu_archive.py','guard.py','system_filter.py','environment_checks.py','ip_reputation.py','diagnostics.py']}
+              'src':['lulu_archive.py','guard.py','system_filter.py','environment_checks.py','ip_reputation.py','diagnostics.py','domain_checks.py']}
 EMBEDDED=False
 REQUEST_ID=0
 ENVIRONMENT_INTERVAL=3600

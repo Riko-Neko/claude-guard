@@ -48,6 +48,8 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     private var criticalTitle: NSTextField?
     private var criticalBody: NSTextField?
     private var criticalTechnical: NSTextField?
+    private var criticalTechnicalScroll: NSScrollView?
+    private var criticalTechnicalHeight: NSLayoutConstraint?
     private var criticalIcon: NSImageView?
     private var criticalButtons: NSStackView?
     private var criticalHeights: [ObjectIdentifier:NSLayoutConstraint] = [:]
@@ -75,7 +77,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
            let data = try? Data(contentsOf: url),
            let tables = try? JSONDecoder().decode([String: [String: String]].self, from: data) { self.tables = tables }
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 400, height: 780)
+        popover.contentSize = NSSize(width: 360, height: 600)
     }
     func tr(_ text: String) -> String {
         if let translated = tables[language]?[text] { return translated }
@@ -141,7 +143,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         notice.show()
         let accent = NSColor(calibratedRed: 0.73, green: 0.38, blue: 0.27, alpha: 1)
         if criticalPanel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160),
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 120),
                                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.isReleasedWhenClosed = false; panel.hasShadow = true
             panel.isOpaque = false; panel.backgroundColor = .clear
@@ -150,55 +152,62 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             let surface = NSVisualEffectView()
             surface.material = .popover; surface.blendingMode = .behindWindow; surface.state = .active
-            surface.wantsLayer = true; surface.layer?.cornerRadius = 15
+            surface.wantsLayer = true; surface.layer?.cornerRadius = 12
             surface.layer?.borderWidth = 1; surface.layer?.borderColor = NSColor.separatorColor.cgColor
             panel.contentView = surface
             let icon = NSImageView(image: NSImage(systemSymbolName: "exclamationmark.shield.fill", accessibilityDescription: nil)!)
             icon.contentTintColor = accent
             let heading = NSTextField(wrappingLabelWithString: "")
-            heading.font = .systemFont(ofSize: 17, weight: .semibold); heading.textColor = accent
+            heading.font = .systemFont(ofSize: 16, weight: .semibold); heading.textColor = accent
             let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: tr("acknowledgeAlert"))!, target: self, action: #selector(dismissCriticalAlert))
             close.isBordered = false; close.contentTintColor = .secondaryLabelColor
             close.toolTip = tr("acknowledgeAlert")
             let header = NSStackView(views: [icon, heading, close])
-            header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 9
+            header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 6
             let details = NSTextField(wrappingLabelWithString: "")
             details.font = .systemFont(ofSize: 14); details.isSelectable = true
             let technical = NSTextField(wrappingLabelWithString: "")
             technical.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
             technical.textColor = .secondaryLabelColor; technical.isSelectable = true
+            let technicalScroll = NSScrollView()
+            technicalScroll.drawsBackground = false; technicalScroll.borderType = .noBorder
+            technicalScroll.hasVerticalScroller = true; technicalScroll.autohidesScrollers = true
+            technicalScroll.documentView = technical
             let risk = NSTextField(wrappingLabelWithString: "")
             risk.font = .systemFont(ofSize: 13)
             let review = NSButton(title: tr("reviewConnection"), target: self, action: #selector(reviewCriticalAlert))
             let approve = NSButton(title: tr("approveExitAction"), target: self, action: #selector(approveCriticalExit))
             let dismiss = NSButton(title: tr("acknowledgeAlert"), target: self, action: #selector(dismissCriticalAlert))
             for button in [dismiss, review, approve] {
-                button.bezelStyle = .rounded; button.controlSize = .regular
-                button.font = .systemFont(ofSize: 13, weight: .medium)
+                button.bezelStyle = .rounded; button.controlSize = .small
+                button.font = .systemFont(ofSize: 12, weight: .medium)
             }
             approve.bezelColor = accent; approve.contentTintColor = .white
             let buttons = NSStackView(views: [dismiss, review, approve])
             buttons.orientation = .horizontal; buttons.alignment = .centerY
-            buttons.distribution = .fillEqually; buttons.spacing = 8
-            let stack = NSStackView(views: [header, details, technical, risk, buttons])
-            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
+            buttons.distribution = .fillEqually; buttons.spacing = 6
+            let stack = NSStackView(views: [header, details, technicalScroll, risk, buttons])
+            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 6
             stack.translatesAutoresizingMaskIntoConstraints = false
             surface.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 14),
-                stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -14),
-                stack.topAnchor.constraint(equalTo: surface.topAnchor, constant: 14),
-                stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -14),
+                stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 10),
+                stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -10),
+                stack.topAnchor.constraint(equalTo: surface.topAnchor, constant: 10),
+                stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -10),
                 header.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                heading.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -61),
-                icon.widthAnchor.constraint(equalToConstant: 23), icon.heightAnchor.constraint(equalToConstant: 24),
-                close.widthAnchor.constraint(equalToConstant: 20), close.heightAnchor.constraint(equalToConstant: 20),
+                heading.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -50),
+                icon.widthAnchor.constraint(equalToConstant: 20), icon.heightAnchor.constraint(equalToConstant: 21),
+                close.widthAnchor.constraint(equalToConstant: 18), close.heightAnchor.constraint(equalToConstant: 18),
                 details.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                technical.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                technicalScroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
                 risk.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                buttons.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.heightAnchor.constraint(equalToConstant: 30)
+                buttons.widthAnchor.constraint(equalTo: stack.widthAnchor), buttons.heightAnchor.constraint(equalToConstant: 24)
             ])
-            for field in [heading, details, technical, risk] {
+            let technicalHeight = technicalScroll.heightAnchor.constraint(equalToConstant: 18)
+            technicalHeight.isActive = true
+            criticalTechnicalScroll = technicalScroll; criticalTechnicalHeight = technicalHeight
+            for field in [heading, details, risk] {
                 let height = field.heightAnchor.constraint(equalToConstant: 20)
                 height.isActive = true; criticalHeights[ObjectIdentifier(field)] = height
             }
@@ -227,18 +236,27 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         guard let panel = criticalPanel, let title = criticalTitle, let body = criticalBody,
               let technical = criticalTechnical, let risk = criticalRisk else { return }
         var heights: [CGFloat] = []
-        for (field, width) in [(title, CGFloat(311)), (body, 372), (technical, 372), (risk, 372)] {
+        for (field, width) in [(title, CGFloat(270)), (body, 320), (technical, 306), (risk, 320)] {
             let rect = (field.stringValue as NSString).boundingRect(with: NSSize(width: width, height: 10000),
                 options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: field.font ?? NSFont.systemFont(ofSize: 14)])
             let height = max(18, ceil(rect.height) + 2)
-            criticalHeights[ObjectIdentifier(field)]?.constant = height
-            if field === title { heights.append(max(24, height)) }
+            if field === technical {
+                technical.frame = NSRect(x: 0, y: 0, width: width, height: height)
+                criticalTechnicalHeight?.constant = min(96, height)
+                if !field.isHidden { heights.append(min(96, height)) }
+            } else { criticalHeights[ObjectIdentifier(field)]?.constant = height }
+            if field === title { heights.append(max(21, height)) }
+            else if field === technical { continue }
             else if !field.isHidden { heights.append(height) }
         }
-        if criticalButtons?.isHidden == false { heights.append(30) }
-        let height = heights.reduce(0, +) + CGFloat(max(0, heights.count - 1)) * 10 + 28
-        panel.setContentSize(NSSize(width: 400, height: height))
+        if criticalButtons?.isHidden == false { heights.append(24) }
+        let height = heights.reduce(0, +) + CGFloat(max(0, heights.count - 1)) * 6 + 20
+        panel.setContentSize(NSSize(width: 340, height: height))
         panel.contentView?.layoutSubtreeIfNeeded()
+        if let scroll = criticalTechnicalScroll {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, technical.frame.height - scroll.contentSize.height)))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
         positionCriticalAlert()
     }
     private func positionCriticalAlert() {
@@ -288,6 +306,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
         let pending = state["approvalRequired"] as? Bool == true && !notice.recovered
         criticalButtons?.isHidden = notice.recovered
         criticalTechnical?.isHidden = notice.recovered || criticalTechnical?.stringValue.isEmpty != false
+        criticalTechnicalScroll?.isHidden = criticalTechnical?.isHidden != false
         criticalBody?.isHidden = criticalBody?.stringValue.isEmpty == true
         criticalRisk?.isHidden = !pending
         criticalApprove?.isHidden = !pending
@@ -325,7 +344,7 @@ final class GuardInterface: NSObject, WKScriptMessageHandler, WKNavigationDelega
     func refreshMenu() {
         let value = currentState()
         let available = noticeAnchor?.window?.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 800
-        popover.contentSize = NSSize(width: 400, height: min(780, available - 70))
+        popover.contentSize = NSSize(width: 360, height: min(600, available - 70))
         send(value, to: menuWeb)
         if settingsReady { send(value, to: settingsWeb) }
     }

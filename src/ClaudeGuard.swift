@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var canApproveExit = false
     var approvalSending = false
     var reputationReport: [String: Any]?
+    var domainReport: [String: Any]?
     var reputationOption = true
     var networkModeReport: [String: Any] = [:]
     var networkModeProcess: Process?
@@ -72,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         try files.createDirectory(at: root, withIntermediateDirectories: true,
                                   attributes: [.posixPermissions: 0o700])
         // Refresh only shipped code. Personal settings and logs never enter the app bundle.
-        for name in ["src", "tools", "tests", "README.md", "README.zh-CN.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "assets", "settings.example.json"] {
+        for name in ["src", "tools", "tests", "README.md", "README.zh-CN.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "assets", "docs", "settings.example.json"] {
             let destination = root.appendingPathComponent(name)
             if files.fileExists(atPath: destination.path) { try files.removeItem(at: destination) }
             try files.copyItem(at: payload.appendingPathComponent(name), to: destination)
@@ -264,6 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "approvalSending": approvalSending,
                 "reputationEnabled": settings["ip_reputation_enabled"] as? Bool ?? true,
                 "reputation": reputationSnapshot(),
+                "domains": domainSnapshot(),
                 "networkMode": networkModeReport, "localChecks": environmentCheckRows(),
                 "connectionTitle": interface.tr(connection.titleKey), "connectionReason": connection.hasFailure ? interface.tr(connection.reason) : "",
                 "active": backend != nil, "paused": backend != nil && blocked,
@@ -273,6 +275,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func reputationSnapshot() -> Any {
         guard let report = reputationReport, report["ip"] as? String == latestIP else { return NSNull() }
+        return report
+    }
+
+    func domainSnapshot() -> Any {
+        guard let report = domainReport, report["ip"] as? String == latestIP else { return NSNull() }
         return report
     }
 
@@ -321,6 +328,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case "refreshRisk":
             guard setupProcess == nil else { return }
             if backend != nil { sendBackend(["action":"risk_refresh"]) }
+            else if hasConfiguredProfile() { checkOnly() }
+        case "refreshDomains":
+            guard setupProcess == nil else { return }
+            if backend != nil { sendBackend(["action":"domain_refresh"]) }
             else if hasConfiguredProfile() { checkOnly() }
         case "approveIP":
             guard canApproveExit, !approvalSending, !pendingExitID.isEmpty, backend?.isRunning == true else { return }
@@ -402,6 +413,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func loadLastCheck() {
         connection = GuardConnectionPresentation()
+        if let data = try? Data(contentsOf: root.appendingPathComponent("runtime/domain-checks.json")) {
+            domainReport = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
+        }
         if let data = try? Data(contentsOf: root.appendingPathComponent("runtime/ip-reputation.json")) {
             reputationReport = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
         }
@@ -449,6 +463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         process.standardError = FileHandle.nullDevice
         pipe = output; backend = process; approvedPID = nil; blocked = false; resuming = false; pending = Data()
         connection.beginCheck()
+        domainReport = nil
         launchItem.isEnabled = false; checkItem.isEnabled = false
         display("正在检查连接…", symbol: "shield.lefthalf.filled")
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -511,6 +526,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   let kind = row["kind"] as? String else { continue }
             connection.receive(row)
             switch kind {
+            case "DOMAIN_CHECKS":
+                if let report = row["report"] as? [String:Any], report["ip"] as? String == latestIP {
+                    domainReport = report
+                    interface.refreshMenu()
+                }
             case "NETWORK_MODE":
                 if let report = row["report"] as? [String:Any] {
                     networkModeGeneration += 1; networkModeReport = report

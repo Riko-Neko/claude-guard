@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import system_filter
 import environment_checks
 import ip_reputation
+import domain_checks
 from diagnostics import failure_diagnostic
 RUNTIME = ROOT / "runtime"
 
@@ -354,6 +355,8 @@ class Session:
         self.pending_exit = None
         self.commands = queue.Queue()
         self.reputation = None
+        self.domains = None
+        self.core_config_signature = None
         self.interactive_action = None
         self.last_network_mode = None
         self.network_mode_at = 0
@@ -420,6 +423,7 @@ class Session:
                   "rules": ["MATCH,ApprovedNode"]}
         config_path = temp / "core.json"
         config_path.write_text(json.dumps(config))
+        self.core_config_signature = hashlib.sha256(config_path.read_bytes()).hexdigest()
         self.core = subprocess.Popen([self.settings["core_executable"], "-d", str(temp), "-f", str(config_path)],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(50):
@@ -494,6 +498,7 @@ class Session:
                               can_approve=self.interactive_action is not None and trace['loc']==self.settings['expected_country'],
                               message='出口发生变化，受控连接已关闭。请查看新出口与来源检查，手动确认后才会更新。')
                     if self.reputation:self.reputation.request(trace['ip'])
+                    if self.domains:self.domains.request(trace['ip'])
                     raise ApprovalRequired("出口不一致：检测到 " + str(trace.get("ip")) + " (" + str(trace.get("loc")) + ")；请重新核验并批准。")
                 self.emit("EGRESS_OK", ip=trace["ip"], country=trace["loc"])
             finally:
@@ -524,6 +529,54 @@ class Session:
         if self.settings.get('ip_reputation_enabled',True):
             self.reputation=ip_reputation.Monitor(self.reputation_json,
                 lambda report:self.emit('IP_REPUTATION',report=report),RUNTIME/'ip-reputation.json')
+
+    def domain_route(self):
+        """Attest the running private core's exact, unconditional pinned configuration.
+
+        This says nothing about connections that bypass Guard or remote-node splitting.
+        """
+        if self.stop.is_set() or self.core is None or self.core.poll() is not None or not self.temp:
+            return False
+        path = Path(self.temp.name) / 'core.json'
+        try:
+            return bool(self.core_config_signature and
+                        hashlib.sha256(path.read_bytes()).hexdigest() == self.core_config_signature)
+        except OSError:
+            return False
+
+    def domain_query(self, host, path, limit):
+        allowed = {t['domain'] for t in domain_checks.TARGETS if t['scope']=='host' or t.get('core') or t.get('probe')}
+        trace = host in allowed and path == '/cdn-cgi/trace' and limit == 16384
+        dataset = host == domain_checks.GEOSITE_HOST and path == domain_checks.GEOSITE_PATH and limit == 131072
+        if not (trace or dataset) or not self.domain_route():
+            raise GuardError('域名检查路径不可用')
+        conn = http.client.HTTPSConnection('127.0.0.1', self.core_port, timeout=3,
+                                           context=ssl.create_default_context())
+        conn.set_tunnel(host, 443, {'Proxy-Authorization': 'Basic ' + self.auth})
+        def abort():
+            with contextlib.suppress(OSError, AttributeError):
+                conn.sock.shutdown(socket.SHUT_RDWR)
+            conn.close()
+        timer = threading.Timer(4, abort)
+        timer.daemon = True
+        timer.start()
+        try:
+            conn.request('GET', path, headers={'Host':host, 'Accept':'text/plain'})
+            response = conn.getresponse()
+            # Never follow redirects, submit credentials, or contact the target directly.
+            if response.status != 200:
+                return response.status, b''
+            body = response.read(limit + 1)
+            if len(body) > limit:
+                raise GuardError('域名检查结果过大')
+            return response.status, body
+        finally:
+            timer.cancel()
+            conn.close()
+
+    def enable_domains(self):
+        self.domains = domain_checks.Monitor(self.domain_query, self.domain_route,
+            lambda report:self.emit('DOMAIN_CHECKS', report=report), RUNTIME/'domain-checks.json')
 
     def approve_exit(self,command,network_event=None):
         """Only explicit, matching UI consent may update a same-country exit."""
@@ -579,7 +632,7 @@ class Session:
             if len(line)>4096:continue
             try:command=json.loads(line)
             except ValueError:continue
-            if isinstance(command,dict) and command.get('action') in ('approve_ip','risk_refresh'):self.commands.put(command)
+            if isinstance(command,dict) and command.get('action') in ('approve_ip','risk_refresh','domain_refresh'):self.commands.put(command)
 
     def audit_environment(self):
         if self.reputation:self.reputation.request((self.pending_exit or {}).get('ip',self.settings['expected_ip']))
@@ -676,6 +729,7 @@ class Session:
                 self.start_audits()
             self.audit_wake.set()
             self.emit('RESUMED', message='连接复查已通过，Claude 连接已恢复。', automatic=automatic)
+            if self.domains:self.domains.request(self.settings['expected_ip'], force=True)
         except Exception as exc:
             self.gate.trip('连接复查未通过')
             self.failed = True
@@ -713,6 +767,8 @@ class Session:
                     command=self.commands.get_nowait()
                     if command['action']=='risk_refresh':
                         if self.reputation:self.reputation.request((self.pending_exit or {}).get('ip',self.settings['expected_ip']),force=True)
+                    elif command['action']=='domain_refresh':
+                        if self.domains:self.domains.request((self.pending_exit or {}).get('ip',self.settings['expected_ip']),force=True)
                     elif self.approve_exit(command,network_event):
                         last_probe=time.monotonic()
                         if self.child is None:
@@ -734,6 +790,7 @@ class Session:
                 if self.core.poll() is not None:
                     raise GuardError("专用出口进程停止")
                 if self.reputation:self.reputation.request(self.settings['expected_ip'])
+                if self.domains:self.domains.request(self.settings['expected_ip'])
                 stage='controller';self.check_config()
                 if hasattr(self, 'filter_pid'):
                     stage='filter'
@@ -762,6 +819,7 @@ class Session:
                 self.fail(reason, recoverable=recoverable,diagnostic=diagnostic)
 
     def close(self):
+        if self.domains:self.domains.close()
         if self.reputation:self.reputation.close()
         self.audit_stop.set()
         self.audit_wake.set()
@@ -807,6 +865,7 @@ def main():
     if args.interactive_approval:
         session.interactive_action=args.action
         session.enable_reputation()
+        session.enable_domains()
         threading.Thread(target=session.read_commands,args=(sys.stdin,),daemon=True).start()
     network_event = threading.Event()
     def network_changed(*_):
@@ -840,10 +899,12 @@ def main():
             session.watch(network_event)
             return 1 if session.failed else 0
         if session.reputation:session.reputation.request(session.settings['expected_ip'])
+        if session.domains:session.domains.request(session.settings['expected_ip'])
         session.start_audits()
         if args.action == "check":
             session.emit("CHECK_COMPLETE", message="仅检查完成，没有启动 Claude")
             if session.reputation:session.reputation.finished.wait(6)
+            if session.domains:session.domains.finished.wait(20)
             return 0
         if network_event.is_set() or session.stop.is_set():
             raise GuardError("检查期间系统状态改变，禁止启动")
